@@ -1,0 +1,178 @@
+#!/bin/sh
+# bootnext - загрузить другой пункт меню ОДИН РАЗ, без клавиатуры в U-Boot.
+#
+#   bootnext              показать список пунктов и текущий default
+#   bootnext 2            следующим стартом загрузить пункт 2 (pinned)
+#   bootnext base         то же по имени
+#   bootnext 2 -p         сделать пункт 2 постоянным (default не вернётся сам)
+#   bootnext default      вернуть заводской пункт (lowopp) постоянно
+#   bootnext -n 4         то же, но без автоматического reboot
+#
+# Как это работает: правится строка `default` в /boot/extlinux/extlinux.conf
+# и создаётся метка /boot/bootonce из двух строк (пункт + прежний default).
+# При следующей загрузке /etc/init.d/local увидит метку, вернёт ПРЕЖНИЙ
+# default и удалит её - то есть пункт грузится ровно один раз, а дальше плата
+# снова стартует так, как вы настроили. Это защита от «цикла зависаний»: даже
+# если выбранный пункт убивает плату, достаточно выключить питание - default
+# уже возвращён. Из консоли U-Boot (=>) то же самое делается без Linux:
+#   setenv pxe_label_override lowopp; boot
+#
+# Заводской пункт хранится в /etc/boot-default (с b016 это lowopp: полная
+# таблица OPP, но все точки @ 1.4 В - проверено на плате в b015). Аварийный
+# пункт без cpufreq и без PMIC - safe: bootnext safe (один раз) или
+# bootnext safe -p (постоянно).
+#
+# Если пункт всё же завис: выключите питание, включите - старт будет прежним.
+# (Интерактивное меню намеренно выключено: в extlinux.conf нет строки "prompt",
+#  поэтому U-Boot сразу грузит default и ничего не спрашивает.)
+
+CONF=/boot/extlinux/extlinux.conf
+MARK=/boot/bootonce
+DO_REBOOT=1
+PERM=0
+ARG=""
+RESET=0
+
+# заводской пункт: /etc/boot-default, запасное значение lowopp
+FACTORY=$(cat /etc/boot-default 2>/dev/null | tr -cd 'A-Za-z0-9_-')
+[ -n "$FACTORY" ] || FACTORY=lowopp
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -n|--no-reboot) DO_REBOOT=0 ;;
+        -p|--permanent) PERM=1 ;;
+        default|reset|factory) RESET=1 ;;
+        -h|--help)      sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *)              ARG="$1" ;;
+    esac
+    shift
+done
+
+if [ ! -r "$CONF" ]; then
+    echo "нет $CONF"
+    echo "boot-раздел не примонтирован? Попробуйте: mount /dev/mmcblk0p1 /boot"
+    echo "(в rescue-initramfs этот файл тоже доступен после такого mount)"
+    exit 1
+fi
+
+# --- список пунктов: "номер label devicetree" -------------------------------
+list_entries() {
+    awk '
+        /^[[:space:]]*label[[:space:]]/ { if (l != "") print n, l, d; n++; l=$2; d="" }
+        /^[[:space:]]*devicetree[[:space:]]/ { d=$2 }
+        END { if (l != "") print n, l, d }
+    ' "$CONF"
+}
+
+CUR=$(awk '/^[[:space:]]*default[[:space:]]/ { print $2; exit }' "$CONF")
+
+if [ -z "$ARG" ] && [ "$RESET" = 0 ]; then
+    echo "=== пункты меню ($CONF) ==="
+    printf '  %-3s %-14s %-18s %s\n' "№" "label" "devicetree" ""
+    list_entries | while read -r n l d; do
+        printf '  %-3s %-14s %-18s %s\n' "$n" "$l" "$d" \
+            "$([ "$l" = "$CUR" ] && echo '<-- default сейчас')"
+    done
+    echo
+    echo "  default сейчас : $CUR"
+    echo "  заводской пункт: $FACTORY  (вернуть: bootnext default)"
+    [ -e "$MARK" ] && echo "  разовая загрузка: $(sed -n 1p $MARK) (метка $MARK ещё не снята, вернётся в $(sed -n 2p $MARK))"
+    echo
+    echo "Использование: bootnext <номер|label>      (например: bootnext 2)"
+    echo "               bootnext <номер|label> -p   (сделать постоянным)"
+    echo "               bootnext default            (вернуть заводской $FACTORY)"
+    exit 0
+fi
+
+# --- разбор аргумента: номер или имя ---------------------------------------
+TARGET=""; TNUM=""
+if [ "$RESET" = 1 ]; then
+    TARGET=$FACTORY
+    TNUM=$(list_entries | awk -v want="$FACTORY" '$2 == want { print $1; exit }')
+    [ -n "$TNUM" ] || { echo "нет пункта '$FACTORY' в $CONF"; exit 1; }
+    PERM=1          # возврат к заводскому - всегда постоянный, без метки
+elif [ -z "$ARG" ]; then
+    echo "bootnext: нужен номер или имя пункта (список: bootnext без аргументов)"
+    exit 2
+else
+    case "$ARG" in
+        ''|*[!0-9]*)
+            T=$(list_entries | awk -v want="$ARG" '$2 == want { print $1; exit }')
+            [ -n "$T" ] && { TNUM=$T; TARGET=$ARG; }
+            ;;
+        *)
+            T=$(list_entries | awk -v want="$ARG" '$1 == want { print $2; exit }')
+            [ -n "$T" ] && { TNUM=$ARG; TARGET=$T; }
+            ;;
+    esac
+fi
+
+if [ -z "$TARGET" ]; then
+    echo "нет такого пункта: '$ARG'. Доступные:"
+    list_entries | while read -r n l d; do printf '  %s  %s\n' "$n" "$l"; done
+    exit 1
+fi
+
+# --- правим default ---------------------------------------------------------
+cp "$CONF" "$CONF.bak" 2>/dev/null
+if ! sed -i "s|^[[:space:]]*default[[:space:]].*|default $TARGET|" "$CONF"; then
+    echo "не удалось изменить $CONF (раздел только для чтения?)"
+    [ -f "$CONF.bak" ] && cp "$CONF.bak" "$CONF"
+    exit 1
+fi
+
+if [ "$PERM" = 1 ]; then
+    # пункт назначается ПОСТОЯННО, поэтому метки разовой загрузки нет и
+    # /etc/init.d/local не станет возвращать default
+    rm -f "$MARK"
+    [ "$RESET" = 1 ] && echo "default = $TARGET (заводской пункт), метка разовой загрузки снята."
+    NEW=$TARGET
+else
+    # в метке две строки: куда переключились и какой default был ДО этого.
+    # Вторая нужна, чтобы после одноразовой загрузки вернуть не заводской
+    # пункт, а то, что пользователь выбрал постоянно (bootnext N -p).
+    printf '%s\n%s\n' "$TARGET" "$CUR" > "$MARK"
+    NEW=$TARGET
+    if [ "$TARGET" = safe ]; then
+        echo "замечание: 'safe' - это одноразовая загрузка аварийного пункта,"
+        echo "           после неё default вернётся в $CUR."
+        echo "           Вернуть заводской пункт постоянно: bootnext default"
+    fi
+fi
+sync
+
+echo
+echo "=== готово ==="
+echo "  $CONF:  default $NEW   (было: $CUR)"
+if [ "$PERM" = 1 ]; then
+    if [ "$RESET" = 1 ]; then
+        echo "  режим: возврат к заводскому пункту (метки $MARK нет)"
+    else
+        echo "  режим: ПОСТОЯННО (метки $MARK нет, default не вернётся сам)"
+        echo "  вернуть заводской:  bootnext default"
+        echo "  ВНИМАНИЕ: если этот пункт вешает плату, после выключения питания она"
+        echo "            снова попытается загрузиться им же. Отменить из U-Boot (=>):"
+        echo "              setenv pxe_label_override $FACTORY; boot"
+    fi
+elif [ -e "$MARK" ]; then
+    T=$(sed -n 1p "$MARK" 2>/dev/null); B=$(sed -n 2p "$MARK" 2>/dev/null)
+    [ -n "$B" ] || B=$FACTORY
+    echo "  метка разовой загрузки: $MARK (target=$T, вернуться в=$B)"
+    echo "  после успешной загрузки default автоматически вернётся в $B"
+else
+    echo "  обычная загрузка: default = $NEW (метки разовой загрузки нет)"
+fi
+echo
+echo "Проверка: grep -E '^(prompt|default|timeout)' $CONF"
+grep -E '^(prompt|default|timeout)' "$CONF" | sed 's/^/    /'
+echo
+
+if [ "$DO_REBOOT" = 1 ] && [ "$RESET" = 0 ]; then
+    echo "Перезагрузка через 5 с (Ctrl-C отменит)..."
+    sleep 1; echo -n "5 "; sleep 1; echo -n "4 "; sleep 1; echo -n "3 "; sleep 1
+    echo -n "2 "; sleep 1; echo "1"
+    sync
+    reboot
+fi
+[ "$RESET" = 1 ] && echo "Перезагрузите плату командой reboot, когда будете готовы."
+exit 0

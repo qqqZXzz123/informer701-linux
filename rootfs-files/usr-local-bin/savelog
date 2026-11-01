@@ -1,0 +1,55 @@
+#!/bin/sh
+# savelog - сохранить полный отчёт diag в файл, имя которого соответствует
+# тому пункту меню, которым загружена плата. Файл кладётся на boot-раздел
+# (vfat), поэтому его сразу видно при подключении карты к ПК.
+#
+#   savelog            -> /boot/diag-<сборка>-<пункт меню>.txt
+#   savelog myname     -> /boot/diag-<сборка>-<пункт меню>-myname.txt
+
+BUILD=$(cat /etc/build-id 2>/dev/null || echo dev)
+LABEL=$(whichboot -l 2>/dev/null | head -n1 | tr -cd 'A-Za-z0-9_-')
+# Защита: label обязан быть коротким. В b013 whichboot -l из-за бага печатал
+# весь отчёт, и из него собиралось имя файла на 300+ символов -> "Filename too
+# long". Теперь длинное/пустое значение отбрасывается, а имя берётся из отчёта.
+if [ -z "$LABEL" ] || [ "${#LABEL}" -gt 24 ]; then
+    LABEL=$(whichboot 2>/dev/null | grep -m1 'label "' | sed 's/.*label "//; s/".*//' | tr -cd 'A-Za-z0-9_-')
+fi
+[ -z "$LABEL" ] && LABEL=unknown
+[ "${#LABEL}" -gt 24 ] && LABEL=unknown
+SUF="$1"
+
+# boot-раздел должен быть примонтирован
+if ! grep -q ' /boot ' /proc/mounts 2>/dev/null; then
+    mount /boot 2>/dev/null || \
+        mount -t vfat /dev/mmcblk0p1 /boot 2>/dev/null
+fi
+
+DIR=/boot
+if ! grep -q ' /boot ' /proc/mounts 2>/dev/null || [ ! -w "$DIR" ]; then
+    DIR=/tmp
+    echo "ВНИМАНИЕ: /boot не примонтирован или только для чтения - пишу в $DIR"
+    echo "          (в initramfs карта доступна как /dev/mmcblk0p1)"
+fi
+
+OUT="$DIR/diag-$BUILD-$LABEL${SUF:+-$SUF}.txt"
+n=2
+while [ -e "$OUT" ]; do                 # не затираем предыдущий лог того же пункта
+    OUT="$DIR/diag-$BUILD-$LABEL${SUF:+-$SUF}-$n.txt"
+    n=$((n+1))
+done
+
+echo "Сохраняю diag в $OUT ..."
+if diag > "$OUT" 2>&1; then
+    sync
+    SIZE=$(wc -c < "$OUT" 2>/dev/null)
+    echo "готово: $OUT ($SIZE байт)"
+    echo
+    echo "Проверьте, что записался нужный пункт:"
+    head -8 "$OUT" | sed -n '1,8p'
+    echo
+    echo "Файл лежит на vfat-разделе карты - его видно с ПК."
+    echo "Отправьте его целиком."
+else
+    echo "ОШИБКА: diag завершился с ошибкой, файл $OUT может быть неполным"
+    exit 1
+fi

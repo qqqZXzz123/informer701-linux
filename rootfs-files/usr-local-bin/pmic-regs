@@ -1,0 +1,82 @@
+#!/bin/sh
+# pmic-regs - дамп и дешифровка AXP209 (шина определяется через i2cbus)
+#
+# Карта регистров AXP209 (по drivers/mfd/axp20x.h из Linux):
+#   0x00 power input status      0x01 power mode      0x03 CHIP ID (=0x21)
+#   0x12 power output control    0x23 DCDC2 Vout      0x25 DCDC2/LDO3 workmode
+#   0x27 DCDC3 Vout              0x28 LDO2(hi)/LDO4(lo) Vout
+#   0x29 LDO3 Vout               0x32 power supply indication
+#   0x39 shutdown/power-key      0x82 ADC enable
+BUS=$(i2cbus); ADDR=0x34
+
+rd() { i2cget -f -y $BUS $ADDR "$1" 2>/dev/null; }
+show() {
+    v=$(rd "$1")
+    if [ -n "$v" ]; then printf '  %-6s %-28s = %s\n' "$1" "$2" "$v"
+    else                 printf '  %-6s %-28s = *** НЕТ ОТВЕТА ***\n' "$1" "$2"; fi
+}
+
+echo "=== AXP209: ключевые регистры (шина /dev/i2c-$BUS) ==="
+show 0x03 "CHIP ID (AXP209 = 0x21)"
+show 0x00 "power input status"
+show 0x01 "power mode"
+show 0x12 "power output control"
+show 0x23 "DCDC2 Vout   (VDD-CPU)"
+show 0x27 "DCDC3 Vout   (VDD-INT)"
+show 0x28 "LDO2(hi)/LDO4(lo) Vout"
+show 0x29 "LDO3  Vout"
+show 0x25 "DCDC2/LDO3 workmode"
+show 0x39 "shutdown / power key"
+show 0x82 "ADC enable"
+
+echo
+echo "=== дешифровка ==="
+id=$(rd 0x03)
+case "$id" in
+    0x21) echo "  CHIP ID 0x21 -> это AXP209, шина отвечает корректно" ;;
+    "")   echo "  CHIP ID не читается -> PMIC не отвечает по I2C" ;;
+    *)    echo "  CHIP ID = $id -> НЕ 0x21! Другой PMIC или мусор на шине" ;;
+esac
+
+d=$(rd 0x23)
+[ -n "$d" ] && echo "  DCDC2 (VDD-CPU) = $(( 700 + 25 * (d & 0x3f) )) mV   (raw $d, 700+25*n)"
+d=$(rd 0x27)
+[ -n "$d" ] && echo "  DCDC3 (VDD-INT) = $(( 700 + 25 * (d & 0x3f) )) mV   (raw $d)"
+d=$(rd 0x28)
+if [ -n "$d" ]; then
+    hi=$(( (d >> 4) & 0x0f )); lo=$(( d & 0x0f ))
+    lo_mv=$(echo 1250 1300 1400 1500 1600 1700 1800 1900 2000 2500 2700 2800 3000 3100 3200 3300 | cut -d' ' -f$((lo + 1)))
+    echo "  LDO2 = $(( 1800 + 100 * hi )) mV (nibble $hi),  LDO4 = ${lo_mv} mV (nibble $lo)"
+fi
+d=$(rd 0x29)
+[ -n "$d" ] && echo "  LDO3 = $(( 700 + 25 * (d & 0x7f) )) mV   (raw $d)"
+
+d=$(rd 0x12)
+if [ -n "$d" ]; then
+    on()  { [ $(( ($d >> $1) & 1 )) -eq 1 ] && echo ВКЛ || echo выкл; }
+    echo "  power output control (raw $d):"
+    printf '    DCDC2 %s  DCDC3 %s  LDO2 %s  LDO3 %s  LDO4 %s  EXTEN %s\n' \
+        "$(on 4)" "$(on 0)" "$(on 1)" "$(on 6)" "$(on 2)" "$(on 3)"
+fi
+
+d=$(rd 0x00)
+if [ -n "$d" ]; then
+    printf '  input status (raw %s): ACIN %s, VBUS %s, состояние батареи = %d\n' \
+        "$d" \
+        "$([ $(( (d >> 7) & 1 )) -eq 1 ] && echo есть || echo нет)" \
+        "$([ $(( (d >> 6) & 1 )) -eq 1 ] && echo есть || echo нет)" \
+        "$(( (d >> 3) & 3 ))"
+    echo "    (0=нет батареи, 1=заряд, 2=разряд, 3=полный/без батареи)"
+fi
+
+hv=$(rd 0x78); lv=$(rd 0x79)
+if [ -n "$hv" ] && [ -n "$lv" ]; then
+    raw=$(( ((hv << 4) | ((lv >> 4) & 0x0f)) ))
+    echo "  батарея: ${raw} отсчётов = $(( raw * 11 / 10 )) mV (0 = батарея не подключена)"
+fi
+
+echo
+echo "=== полный дамп 0x00-0x3f ==="
+i2cdump -y -f $BUS $ADDR 2>&1 | head -8
+echo "=== полный дамп 0x80-0x8f (ADC enable / IRQ) ==="
+i2cdump -y -f -r 0x80-0x8f $BUS $ADDR 2>&1 | head -5

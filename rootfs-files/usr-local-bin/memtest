@@ -1,0 +1,10 @@
+#!/bin/sh
+# memtest [объём] [проходов] - проверка DRAM (по умолчанию 32M, 2 прохода)
+# 4 чипа H5TQ1G83BFR/K4B1G0846E по 1 Гбит x8 = 512 МиБ, 32-битная шина.
+SIZE=${1:-32M}
+LOOPS=${2:-2}
+echo "memtester $SIZE, $LOOPS проходов (Ctrl-C - прервать)"
+echo "Свободно памяти сейчас:"
+head -3 /proc/meminfo
+echo
+memtester "$SIZE" "$LOOPS"

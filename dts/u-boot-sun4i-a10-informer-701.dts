@@ -1,0 +1,50 @@
+/*
+ * Minimal U-Boot device tree for the Informer 701 (N708H6) A10 tablet board.
+ * U-Boot only needs: console (UART0 PB22/PB23), the boot microSD (SDC0/mmc0)
+ * and the AXP209 on TWI0. Everything else (LCD, touch, WiFi, NAND, camera)
+ * is described in the kernel device tree instead.
+ */
+
+/dts-v1/;
+#include "sun4i-a10.dtsi"
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+	model = "Informer 701 (N708H6, Allwinner A10)";
+	compatible = "informer,informer-701", "allwinner,sun4i-a10";
+
+	aliases {
+		serial0 = &uart0;
+		mmc0 = &mmc0;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+};
+
+&i2c0 {
+	status = "okay";
+
+	axp209: pmic@34 {
+		compatible = "x-powers,axp209";
+		reg = <0x34>;
+		interrupts = <0>;
+		interrupt-controller;
+		#interrupt-cells = <1>;
+	};
+};
+
+&mmc0 {
+	bus-width = <4>;
+	cd-gpios = <&pio 7 1 GPIO_ACTIVE_LOW>;	/* PH1 = SD0-DET# */
+	status = "okay";
+};
+
+&uart0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart0_pb_pins>;	/* PB22 = TX (TP20), PB23 = RX (TP21) */
+	status = "okay";
+};

@@ -1,0 +1,697 @@
+# Прогон scripts/qemu-test.sh для этого набора (2026-11-01, ядро набора = b027).
+# Команда: BUILD=<имя> bash scripts/qemu-test.sh   ->  QTEST RESULT: PASS, 0 провалов.
+# Фикстуры в scripts/qtest-init.sh анонимизированы (MAC 00:11:22:33:44:55, SSID ExampleNet).
+
+[    0.254120] CPU0: Spectre v2: firmware did not set auxiliary control register IBE bit, system vulnerable
+[    3.846255] i2c i2c-0: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[    3.846942] axp20x-i2c 0-0034: Failed to set masks in 0x40: -110
+[    3.847263] axp20x-i2c 0-0034: failed to add irq chip: -110
+[   33.845159] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[   33.849891] mma7660 1-004c: failed to read sensor mode
+[   45.137455] musb-sunxi 1c13000.usb: Error unknown readb offset 128
+[   45.139898] musb-hdrc musb-hdrc.1.auto: error -EINVAL: musb_init_controller failed
+[   46.530647] ehci-platform 1c14000.usb: can't setup: -110
+[   46.564687] ehci-platform 1c1c000.usb: can't setup: -110
+[   46.596637] ohci-platform 1c14400.usb: init err (00000000 0000)
+[   46.596958] ohci-platform 1c14400.usb: can't start
+[   46.598215] ohci-platform 1c14400.usb: startup error -75
+[   46.626663] ohci-platform 1c1c400.usb: init err (00000000 0000)
+[   46.627094] ohci-platform 1c1c400.usb: can't start
+[   46.627496] ohci-platform 1c1c400.usb: startup error -75
+mkdir: can't create directory '/sys/kernel/debug': Operation not permitted
+== QTEST build-id: pubtest ==
+Linux informer701 6.6.0 #1 SMP Sat Oct 31 16:41:38 UTC 2026 armv7l Linux
+cmdline: console=ttyS0,115200 loglevel=4 clk_ignore_unused rdinit=/init panic=1
+[1] автозагрузка модулей:
+  OK   /proc/sys/kernel/hotplug = /sbin/hotplug
+  OK   /sbin/hotplug исполняемый
+[2] устройства:
+  OK   /dev/urandom
+  OK   /dev/null
+  OK   /dev/console
+  OK   /dev/ttyS0
+[3] симлинки (цель должна существовать):
+  OK   /usr/local/bin/iptables-save -> /sbin/iptables-legacy-save
+  OK   /usr/local/bin/resize2fs -> /usr/sbin/resize2fs
+  OK   /usr/local/bin/hostapd_cli -> /usr/bin/hostapd_cli
+  OK   /usr/local/bin/ss -> /sbin/ss
+  OK   /usr/local/bin/iwlist -> /usr/sbin/iwlist
+  OK   /usr/local/bin/lzcat -> /usr/bin/lzcat
+  OK   /usr/local/bin/fsck.vfat -> /sbin/fsck.vfat
+  OK   /usr/local/bin/xz -> /usr/bin/xz
+  OK   /usr/local/bin/iw -> /usr/sbin/iw
+  OK   /usr/local/bin/ip6tables -> /sbin/ip6tables-legacy
+  OK   /usr/local/bin/dropbear -> /usr/sbin/dropbear
+  OK   /usr/local/bin/lsusb -> /usr/bin/lsusb
+  OK   /usr/local/bin/dnsmasq -> /usr/sbin/dnsmasq
+  OK   /usr/local/bin/nano -> /usr/bin/nano
+  OK   /usr/local/bin/tc -> /sbin/tc
+  OK   /usr/local/bin/ftpd -> /bin/busybox-extras
+  OK   /usr/local/bin/iptables -> /sbin/iptables-legacy
+  OK   /usr/local/bin/i2cdetect -> /usr/sbin/i2cdetect
+  OK   /usr/local/bin/fsck.ext4 -> /sbin/fsck.ext4
+  OK   /usr/local/bin/tcpsvd -> /bin/busybox-extras
+  OK   /usr/local/bin/iptables-restore -> /sbin/iptables-legacy-restore
+  OK   /usr/local/bin/udhcpd -> /bin/busybox-extras
+  OK   /usr/local/bin/mkfs.vfat -> /sbin/mkfs.vfat
+  OK   /usr/local/bin/i2cget -> /usr/sbin/i2cget
+  OK   /usr/local/bin/httpd -> /bin/busybox-extras
+  OK   /usr/local/bin/inetd -> /bin/busybox-extras
+  OK   /usr/local/bin/ip -> /sbin/ip
+  OK   /usr/local/bin/dumpleases -> /bin/busybox-extras
+  OK   /usr/local/bin/htop -> /usr/bin/htop
+  OK   /usr/local/bin/picocom -> /usr/bin/picocom
+  OK   /usr/local/bin/tftpd -> /bin/busybox-extras
+  OK   /usr/local/bin/telnetd -> /bin/busybox-extras
+  OK   /usr/local/bin/haveged -> /usr/sbin/haveged
+  OK   /usr/local/bin/iwconfig -> /usr/sbin/iwconfig
+  OK   /usr/local/bin/wpa_cli -> /sbin/wpa_cli
+  OK   /usr/local/bin/i2ctransfer -> /usr/sbin/i2ctransfer
+  OK   /usr/local/bin/hostapd -> /usr/sbin/hostapd
+  OK   /usr/local/bin/ssh -> /usr/bin/dbclient
+  OK   /usr/local/bin/mke2fs -> /sbin/mke2fs
+  OK   /usr/local/bin/i2cset -> /usr/sbin/i2cset
+  OK   /usr/local/bin/wpa_supplicant -> /sbin/wpa_supplicant
+  OK   /usr/local/bin/unxz -> /usr/bin/unxz
+  OK   /usr/local/bin/e2fsck -> /sbin/e2fsck
+  OK   /usr/local/bin/i2cdump -> /usr/sbin/i2cdump
+  OK   /usr/local/bin/usb-devices -> /usr/bin/usb-devices
+  OK   /usr/local/bin/mkfs.fat -> /sbin/mkfs.fat
+  OK   /usr/local/bin/tune2fs -> /usr/sbin/tune2fs
+  OK   /usr/local/bin/ip6tables-restore -> /sbin/ip6tables-legacy-restore
+  OK   /usr/local/bin/wpa_passphrase -> /sbin/wpa_passphrase
+  OK   /usr/local/bin/ip6tables-save -> /sbin/ip6tables-legacy-save
+  OK   /usr/local/bin/fsck.fat -> /sbin/fsck.fat
+  OK   /usr/local/bin/iwgetid -> /usr/sbin/iwgetid
+  OK   /sbin/iptables-save -> iptables-legacy-save
+  OK   /sbin/iptables-legacy -> xtables-legacy-multi
+  OK   /sbin/swapoff -> /bin/busybox
+  OK   /sbin/watchdog -> /bin/busybox
+  OK   /sbin/rtstat -> lnstat
+  OK   /sbin/sysctl -> /bin/busybox
+  OK   /sbin/losetup -> /bin/busybox
+  OK   /sbin/iptables-legacy-save -> xtables-legacy-multi
+  OK   /sbin/mkfs.ext4 -> mke2fs
+  OK   /sbin/adjtimex -> /bin/busybox
+  OK   /sbin/mkfs.ext2 -> mke2fs
+  OK   /sbin/ip6tables-apply -> iptables-apply
+  OK   /sbin/fdisk -> /bin/busybox
+  OK   /sbin/fsck.ext3 -> e2fsck
+  OK   /sbin/ifconfig -> /bin/busybox
+  OK   /sbin/ip6tables-legacy-save -> xtables-legacy-multi
+  OK   /sbin/acpid -> /bin/busybox
+  OK   /sbin/fsck.vfat -> fsck.fat
+  OK   /sbin/ifenslave -> /bin/busybox
+  OK   /sbin/modinfo -> /bin/kmod
+  OK   /sbin/mdev -> /bin/busybox
+  OK   /sbin/blockdev -> /bin/busybox
+  OK   /sbin/ip6tables -> ip6tables-legacy
+  OK   /sbin/fsck.ext2 -> e2fsck
+  OK   /sbin/arp -> /bin/busybox
+  OK   /sbin/hwclock -> /bin/busybox
+  OK   /sbin/klogd -> /bin/busybox
+  OK   /sbin/syslogd -> /bin/busybox
+  OK   /sbin/iptables -> iptables-legacy
+  OK   /sbin/mkfs.ext3 -> mke2fs
+  OK   /sbin/fbsplash -> /bin/busybox
+  OK   /sbin/fsck.ext4 -> e2fsck
+  OK   /sbin/ifup -> /bin/busybox
+  OK   /sbin/ifdown -> /bin/busybox
+  OK   /sbin/raidautorun -> /bin/busybox
+  OK   /sbin/iptables-restore -> iptables-legacy-restore
+  OK   /sbin/mkfs.vfat -> mkfs.fat
+  OK   /sbin/tunctl -> /bin/busybox
+  OK   /sbin/nologin -> /bin/busybox
+  OK   /sbin/inotifyd -> /bin/busybox
+  OK   /sbin/mkswap -> /bin/busybox
+  OK   /sbin/init -> /bin/busybox
+  OK   /sbin/iproute -> /bin/busybox
+  OK   /sbin/udhcpc -> /bin/busybox
+  OK   /sbin/switch_root -> /bin/busybox
+  OK   /sbin/poweroff -> /bin/busybox
+  OK   /sbin/dosfsck -> fsck.fat
+  OK   /sbin/iprule -> /bin/busybox
+  OK   /sbin/depmod -> /bin/kmod
+  OK   /sbin/rmmod -> /bin/kmod
+  OK   /sbin/iptables-legacy-restore -> xtables-legacy-multi
+  OK   /sbin/iplink -> /bin/busybox
+  OK   /sbin/zcip -> /bin/busybox
+  OK   /sbin/findfs -> /bin/busybox
+  OK   /sbin/loadkmap -> /bin/busybox
+  OK   /sbin/halt -> /bin/busybox
+  OK   /sbin/ip6tables-legacy -> xtables-legacy-multi
+  OK   /sbin/mkdosfs -> mkfs.fat
+  OK   /sbin/modprobe -> /bin/kmod
+  OK   /sbin/fsck.msdos -> fsck.fat
+  OK   /sbin/fstrim -> /bin/busybox
+  OK   /sbin/swapon -> /bin/busybox
+  OK   /sbin/ipneigh -> /bin/busybox
+  OK   /sbin/insmod -> /bin/kmod
+  OK   /sbin/reboot -> /bin/busybox
+  OK   /sbin/ipaddr -> /bin/busybox
+  OK   /sbin/iptunnel -> /bin/busybox
+  OK   /sbin/ip6tables-legacy-restore -> xtables-legacy-multi
+  OK   /sbin/lsmod -> /bin/kmod
+  OK   /sbin/ctstat -> lnstat
+  OK   /sbin/route -> /bin/busybox
+  OK   /sbin/logread -> /bin/busybox
+  OK   /sbin/pivot_root -> /bin/busybox
+  OK   /sbin/ip6tables-restore -> ip6tables-legacy-restore
+  OK   /sbin/nameif -> /bin/busybox
+  OK   /sbin/ip6tables-save -> ip6tables-legacy-save
+  OK   /sbin/slattach -> /bin/busybox
+  OK   /sbin/fsck -> /bin/busybox
+  OK   /sbin/blkid -> /bin/busybox
+  OK   /sbin/vconfig -> /bin/busybox
+  OK   /sbin/mkfs.msdos -> mkfs.fat
+  OK   /sbin/getty -> /bin/busybox
+  OK   /sbin/setconsole -> /bin/busybox
+  OK   /sbin/dosfslabel -> fatlabel
+  OK   /bin/chown -> /bin/busybox
+  OK   /bin/egrep -> /bin/busybox
+  OK   /bin/pipe_progress -> /bin/busybox
+  OK   /bin/getopt -> /bin/busybox
+  OK   /bin/ping -> /bin/busybox
+  OK   /bin/dnsdomainname -> /bin/busybox
+  OK   /bin/ps -> /bin/busybox
+  OK   /bin/sh -> /bin/busybox
+  OK   /bin/ping6 -> /bin/busybox
+  OK   /bin/echo -> /bin/busybox
+  OK   /bin/mount -> /bin/busybox
+  OK   /bin/modinfo -> /bin/kmod
+  OK   /bin/run-parts -> /bin/busybox
+  OK   /bin/sed -> /bin/busybox
+  OK   /bin/su -> /bin/busybox
+  OK   /bin/true -> /bin/busybox
+  OK   /bin/ls -> /bin/busybox
+  OK   /bin/setserial -> /bin/busybox
+  OK   /bin/mv -> /bin/busybox
+  OK   /bin/dmesg -> /bin/busybox
+  OK   /bin/mountpoint -> /bin/busybox
+  OK   /bin/chgrp -> /bin/busybox
+  OK   /bin/hostname -> /bin/busybox
+  OK   /bin/netstat -> /bin/busybox
+  OK   /bin/reformime -> /bin/busybox
+  OK   /bin/ln -> /bin/busybox
+  OK   /bin/fdflush -> /bin/busybox
+  OK   /bin/makemime -> /bin/busybox
+  OK   /bin/zcat -> /bin/busybox
+  OK   /bin/mktemp -> /bin/busybox
+  OK   /bin/tar -> /bin/busybox
+  OK   /bin/base64 -> /bin/busybox
+  OK   /bin/sync -> /bin/busybox
+  OK   /bin/touch -> /bin/busybox
+  OK   /bin/false -> /bin/busybox
+  OK   /bin/cat -> /bin/busybox
+  OK   /bin/fgrep -> /bin/busybox
+  OK   /bin/login -> /bin/busybox
+  OK   /bin/rev -> /bin/busybox
+  OK   /bin/ash -> /bin/busybox
+  OK   /bin/bbconfig -> /bin/busybox
+  OK   /bin/watch -> /bin/busybox
+  OK   /bin/more -> /bin/busybox
+  OK   /bin/lzop -> /bin/busybox
+  OK   /bin/chmod -> /bin/busybox
+  OK   /bin/grep -> /bin/busybox
+  OK   /bin/date -> /bin/busybox
+  OK   /bin/df -> /bin/busybox
+  OK   /bin/gunzip -> /bin/busybox
+  OK   /bin/depmod -> /bin/kmod
+  OK   /bin/ipcalc -> /bin/busybox
+  OK   /bin/rmmod -> /bin/kmod
+  OK   /bin/arch -> /bin/busybox
+  OK   /bin/mknod -> /bin/busybox
+  OK   /bin/uname -> /bin/busybox
+  OK   /bin/stty -> /bin/busybox
+  OK   /bin/chattr -> /bin/busybox
+  OK   /bin/stat -> /bin/busybox
+  OK   /bin/linux64 -> /bin/busybox
+  OK   /bin/sleep -> /bin/busybox
+  OK   /bin/dd -> /bin/busybox
+  OK   /bin/linux32 -> /bin/busybox
+  OK   /bin/fsync -> /bin/busybox
+  OK   /bin/ionice -> /bin/busybox
+  OK   /bin/lsattr -> /bin/busybox
+  OK   /bin/link -> /bin/busybox
+  OK   /bin/kbd_mode -> /bin/busybox
+  OK   /bin/modprobe -> /bin/kmod
+  OK   /bin/setpriv -> /bin/busybox
+  OK   /bin/fatattr -> /bin/busybox
+  OK   /bin/rm -> /bin/busybox
+  OK   /bin/kill -> /bin/busybox
+  OK   /bin/iostat -> /bin/busybox
+  OK   /bin/insmod -> /bin/kmod
+  OK   /bin/rmdir -> /bin/busybox
+  OK   /bin/lsmod -> /bin/kmod
+  OK   /bin/cp -> /bin/busybox
+  OK   /bin/nice -> /bin/busybox
+  OK   /bin/printenv -> /bin/busybox
+  OK   /bin/mkdir -> /bin/busybox
+  OK   /bin/mpstat -> /bin/busybox
+  OK   /bin/dumpkmap -> /bin/busybox
+  OK   /bin/pidof -> /bin/busybox
+  OK   /bin/pwd -> /bin/busybox
+  OK   /bin/usleep -> /bin/busybox
+  OK   /bin/umount -> /bin/busybox
+  OK   /bin/gzip -> /bin/busybox
+  OK   /usr/sbin/nbd-client -> /bin/busybox
+  OK   /usr/sbin/nandwrite -> /bin/busybox
+  OK   /usr/sbin/setfont -> /bin/busybox
+  OK   /usr/sbin/crond -> /bin/busybox
+  OK   /usr/sbin/sendmail -> /bin/busybox
+  OK   /usr/sbin/addgroup -> /bin/busybox
+  OK   /usr/sbin/e2label -> tune2fs
+  OK   /usr/sbin/partprobe -> /bin/busybox
+  OK   /usr/sbin/delgroup -> /bin/busybox
+  OK   /usr/sbin/ntpd -> /bin/busybox
+  OK   /usr/sbin/adduser -> /bin/busybox
+  OK   /usr/sbin/add-shell -> /bin/busybox
+  OK   /usr/sbin/setlogcons -> /bin/busybox
+  OK   /usr/sbin/rdate -> /bin/busybox
+  OK   /usr/sbin/brctl -> /bin/busybox
+  OK   /usr/sbin/e2mmpstatus -> dumpe2fs
+  OK   /usr/sbin/nanddump -> /bin/busybox
+  OK   /usr/sbin/arping -> /bin/busybox
+  OK   /usr/sbin/ether-wake -> /bin/busybox
+  OK   /usr/sbin/readahead -> /bin/busybox
+  OK   /usr/sbin/killall5 -> /bin/busybox
+  OK   /usr/sbin/chpasswd -> /bin/busybox
+  OK   /usr/sbin/remove-shell -> /bin/busybox
+  OK   /usr/sbin/rdev -> /bin/busybox
+  OK   /usr/sbin/rfkill -> /bin/busybox
+  OK   /usr/sbin/loadfont -> /bin/busybox
+  OK   /usr/sbin/fbset -> /bin/busybox
+  OK   /usr/sbin/chroot -> /bin/busybox
+  OK   /usr/sbin/deluser -> /bin/busybox
+  OK   /usr/bin/printf -> /bin/busybox
+  OK   /usr/bin/xzcmp -> xzdiff
+  OK   /usr/bin/unlink -> /bin/busybox
+  OK   /usr/bin/beep -> /bin/busybox
+  OK   /usr/bin/pscan -> /bin/busybox
+  OK   /usr/bin/vi -> /bin/busybox
+  OK   /usr/bin/setsid -> /bin/busybox
+  OK   /usr/bin/sum -> /bin/busybox
+  OK   /usr/bin/traceroute -> /bin/busybox
+  OK   /usr/bin/xzegrep -> xzgrep
+  OK   /usr/bin/bunzip2 -> /bin/busybox
+  OK   /usr/bin/udhcpc6 -> /bin/busybox
+  OK   /usr/bin/xzfgrep -> xzgrep
+  OK   /usr/bin/paste -> /bin/busybox
+  OK   /usr/bin/mkfifo -> /bin/busybox
+  OK   /usr/bin/[[ -> /bin/busybox
+  OK   /usr/bin/od -> /bin/busybox
+  OK   /usr/bin/clear -> /bin/busybox
+  OK   /usr/bin/shuf -> /bin/busybox
+  OK   /usr/bin/resize -> /bin/busybox
+  OK   /usr/bin/eject -> /bin/busybox
+  OK   /usr/bin/top -> /bin/busybox
+  OK   /usr/bin/lzcat -> xz
+  OK   /usr/bin/cmp -> /bin/busybox
+  OK   /usr/bin/sha1sum -> /bin/busybox
+  OK   /usr/bin/dos2unix -> /bin/busybox
+  OK   /usr/bin/bzcat -> /bin/busybox
+  OK   /usr/bin/tr -> /bin/busybox
+  OK   /usr/bin/[ -> /bin/busybox
+  OK   /usr/bin/lzcmp -> xzdiff
+  OK   /usr/bin/unexpand -> /bin/busybox
+  OK   /usr/bin/vlock -> /bin/busybox
+  OK   /usr/bin/head -> /bin/busybox
+  OK   /usr/bin/comm -> /bin/busybox
+  OK   /usr/bin/unzip -> /bin/busybox
+  OK   /usr/bin/xzcat -> xz
+  OK   /usr/bin/expand -> /bin/busybox
+  OK   /usr/bin/ipcs -> /bin/busybox
+  OK   /usr/bin/passwd -> /bin/busybox
+  OK   /usr/bin/less -> /bin/busybox
+  OK   /usr/bin/unlzma -> xz
+  OK   /usr/bin/sha512sum -> /bin/busybox
+  OK   /usr/bin/factor -> /bin/busybox
+  OK   /usr/bin/ipcrm -> /bin/busybox
+  OK   /usr/bin/md5sum -> /bin/busybox
+  OK   /usr/bin/hd -> /bin/busybox
+  OK   /usr/bin/readlink -> /bin/busybox
+  OK   /usr/bin/id -> /bin/busybox
+  OK   /usr/bin/truncate -> /bin/busybox
+  OK   /usr/bin/install -> /bin/busybox
+  OK   /usr/bin/uuencode -> /bin/busybox
+  OK   /usr/bin/env -> /bin/busybox
+  OK   /usr/bin/find -> /bin/busybox
+  OK   /usr/bin/realpath -> /bin/busybox
+  OK   /usr/bin/cut -> /bin/busybox
+  OK   /usr/bin/unix2dos -> /bin/busybox
+  OK   /usr/bin/lzdiff -> xzdiff
+  OK   /usr/bin/last -> /bin/busybox
+  OK   /usr/bin/flock -> /bin/busybox
+  OK   /usr/bin/xargs -> /bin/busybox
+  OK   /usr/bin/test -> /bin/busybox
+  OK   /usr/bin/mkpasswd -> /bin/busybox
+  OK   /usr/bin/seq -> /bin/busybox
+  OK   /usr/bin/sha256sum -> /bin/busybox
+  OK   /usr/bin/lzma -> xz
+  OK   /usr/bin/showkey -> /bin/busybox
+  OK   /usr/bin/killall -> /bin/busybox
+  OK   /usr/bin/fold -> /bin/busybox
+  OK   /usr/bin/wc -> /bin/busybox
+  OK   /usr/bin/lzless -> xzless
+  OK   /usr/bin/nohup -> /bin/busybox
+  OK   /usr/bin/groups -> /bin/busybox
+  OK   /usr/bin/awk -> /bin/busybox
+  OK   /usr/bin/uptime -> /bin/busybox
+  OK   /usr/bin/pmap -> /bin/busybox
+  OK   /usr/bin/nslookup -> /bin/busybox
+  OK   /usr/bin/pgrep -> /bin/busybox
+  OK   /usr/bin/tail -> /bin/busybox
+  OK   /usr/bin/cksum -> /bin/busybox
+  OK   /usr/bin/iptables-xml -> /sbin/xtables-legacy-multi
+  OK   /usr/bin/openvt -> /bin/busybox
+  OK   /usr/bin/sort -> /bin/busybox
+  OK   /usr/bin/free -> /bin/busybox
+  OK   /usr/bin/whoami -> /bin/busybox
+  OK   /usr/bin/ttysize -> /bin/busybox
+  OK   /usr/bin/crontab -> /bin/busybox
+  OK   /usr/bin/expr -> /bin/busybox
+  OK   /usr/bin/hexdump -> /bin/busybox
+  OK   /usr/bin/logger -> /bin/busybox
+  OK   /usr/bin/diff -> /bin/busybox
+  OK   /usr/bin/basename -> /bin/busybox
+  OK   /usr/bin/lzopcat -> /bin/busybox
+  OK   /usr/bin/shred -> /bin/busybox
+  OK   /usr/bin/cryptpw -> /bin/busybox
+  OK   /usr/bin/timeout -> /bin/busybox
+  OK   /usr/bin/cpio -> /bin/busybox
+  OK   /usr/bin/sha3sum -> /bin/busybox
+  OK   /usr/bin/fallocate -> /bin/busybox
+  OK   /usr/bin/nl -> /bin/busybox
+  OK   /usr/bin/hostid -> /bin/busybox
+  OK   /usr/bin/lzegrep -> xzgrep
+  OK   /usr/bin/mesg -> /bin/busybox
+  OK   /usr/bin/tty -> /bin/busybox
+  OK   /usr/bin/pstree -> /bin/busybox
+  OK   /usr/bin/time -> /bin/busybox
+  OK   /usr/bin/uniq -> /bin/busybox
+  OK   /usr/bin/who -> /bin/busybox
+  OK   /usr/bin/nsenter -> /bin/busybox
+  OK   /usr/bin/yes -> /bin/busybox
+  OK   /usr/bin/traceroute6 -> /bin/busybox
+  OK   /usr/bin/blkdiscard -> /bin/busybox
+  OK   /usr/bin/nc -> /bin/busybox
+  OK   /usr/bin/chvt -> /bin/busybox
+  OK   /usr/bin/volname -> /bin/busybox
+  OK   /usr/bin/tree -> /bin/busybox
+  OK   /usr/bin/unlzop -> /bin/busybox
+  OK   /usr/bin/du -> /bin/busybox
+  OK   /usr/bin/tac -> /bin/busybox
+  OK   /usr/bin/dc -> /bin/busybox
+  OK   /usr/bin/whois -> /bin/busybox
+  OK   /usr/bin/which -> /bin/busybox
+  OK   /usr/bin/reset -> /bin/busybox
+  OK   /usr/bin/unxz -> xz
+  OK   /usr/bin/pkill -> /bin/busybox
+  OK   /usr/bin/lzfgrep -> xzgrep
+  OK   /usr/bin/wget -> /bin/busybox
+  OK   /usr/bin/renice -> /bin/busybox
+  OK   /usr/bin/microcom -> /bin/busybox
+  OK   /usr/bin/cal -> /bin/busybox
+  OK   /usr/bin/uudecode -> /bin/busybox
+  OK   /usr/bin/rnano -> nano
+  OK   /usr/bin/pwdx -> /bin/busybox
+  OK   /usr/bin/setkeycodes -> /bin/busybox
+  OK   /usr/bin/xxd -> /bin/busybox
+  OK   /usr/bin/tee -> /bin/busybox
+  OK   /usr/bin/bzip2 -> /bin/busybox
+  OK   /usr/bin/deallocvt -> /bin/busybox
+  OK   /usr/bin/bc -> /bin/busybox
+  OK   /usr/bin/lzgrep -> xzgrep
+  OK   /usr/bin/unshare -> /bin/busybox
+  OK   /usr/bin/strings -> /bin/busybox
+  OK   /usr/bin/nproc -> /bin/busybox
+  OK   /usr/bin/fuser -> /bin/busybox
+  OK   /usr/bin/lzmore -> xzmore
+  OK   /usr/bin/dirname -> /bin/busybox
+  OK   /usr/bin/split -> /bin/busybox
+  OK   /usr/bin/lsof -> /bin/busybox
+  OK   /usr/bin/nmeter -> /bin/busybox
+  OK   /etc/mtab -> /proc/mounts
+[4] modprobe / lsmod:
+  OK   /lib/modules/6.6.0 есть (97 модулей)
+  OK   modules.dep на месте
+kmod version 32
+  OK   modprobe cfg80211
+  OK   modprobe mac80211
+  OK   modprobe rfkill
+  OK   modprobe rt2x00lib
+  OK   modprobe rt2800lib
+  OK   modprobe rt2800usb
+  OK   modprobe rtl8xxxu
+  OK   modprobe rtl8192cu
+  OK   modprobe mt7601u
+  OK   modprobe mt76x0u
+  OK   modprobe ath9k_htc
+  OK   modprobe carl9170
+  OK   modprobe exfat
+  OK   modprobe ntfs3
+  OK   modprobe nf_conntrack
+  OK   modprobe nf_nat
+  OK   modprobe xt_MASQUERADE
+  OK   modprobe iptable_nat
+  OK   modprobe cdc_acm
+  OK   modprobe r8152
+  OK   lsmod: 37 загруженных модулей
+    Module                  Size  Used by
+    r8152                  94208  0
+    cdc_acm                20480  0
+    iptable_nat            12288  0
+    ip_tables              20480  1 iptable_nat
+    xt_MASQUERADE          12288  0
+    x_tables               20480  3 ip_tables,xt_MASQUERADE,iptable_nat
+    nf_nat                 28672  2 xt_MASQUERADE,iptable_nat
+    nf_conntrack           81920  2 xt_MASQUERADE,nf_nat
+    nf_defrag_ipv6         16384  1 nf_conntrack
+    nf_defrag_ipv4         12288  1 nf_conntrack
+    ntfs3                 212992  0
+[5] iptables / NAT:
+  OK   iptables -t nat -L работает
+  OK   правило MASQUERADE добавлено
+    -P POSTROUTING ACCEPT
+    -A POSTROUTING -o wlan0 -j MASQUERADE
+    iptables v1.8.10 (legacy)
+[6] запуск всех бинарников (ловим отсутствующие библиотеки):
+Terminated
+Terminated
+  OK   все ELF-бинарники запускаются
+[6b] запуск wpa_supplicant (баг b021: ключ -f не поддерживается):
+  OK   wpa_supplicant БЕЗ -f - wifi должен использовать перенаправление
+  OK   wpa_supplicant НЕ поддерживает -f (Alpine без CONFIG_DEBUG_FILE) - так и задумано
+  OK   wifi сам определяет поддержку -f
+  OK   wifi умеет запустить wpa_supplicant без -f (setsid + перенаправление в лог)
+  OK   -f в wifi используется только при поддержке
+  OK   без -f wpa_supplicant инициализируется
+  OK   setsid есть (wpa_supplicant переживёт закрытие сессии)
+[6c] база регуляторных доменов:
+  OK   regulatory.db (4896 Б)
+  OK   regulatory.db.p7s (1182 Б)
+  OK   в dmesg нет жалобы на подпись regdb
+[6d] wpa_cli/ctrl_interface и DHCP (баг b022: ассоциация есть, адреса нет):
+  OK   wpa_cli есть
+  OK   udhcpc default.script есть (адрес/DNS будут прописаны)
+  OK   udhcpc есть
+  OK   все вызовы wpa_cli через обёртку с -p
+  OK   CTRL_DIR=/var/run/wpa_supplicant (значение по умолчанию для wpa_cli)
+  OK   новый конфиг: ctrl_interface=/var/run/wpa_supplicant
+  OK   старый конфиг (b022) перенесён на /var/run/wpa_supplicant
+  OK   ctrl_interface в конфиге ровно один
+  OK     assoc_ok: лог платы b022 распознан как подключение
+  OK     assoc_ok: пустой лог -> не подключено
+  OK     assoc_ok: WRONG_KEY/дисконнект -> не подключено
+  OK   в справке есть wifi dhcp
+  OK   в справке есть wifi static
+[6e] монитор питания и ограничение мощности передатчика:
+  OK   pmic-vbus есть и исполняемый
+  OK   pmic-vbus: синтаксис sh корректен
+  OK   VBUS U читается из 0x5A/0x5B (AXP209)
+  OK   ток VBUS читается из 0x5C/0x5D
+  OK   масштаб 1.7 мВ на отсчёт (по даташиту AXP209)
+  OK   переменная тока VBUS именуется единообразно
+  OK   режим log сбрасывает данные на карту (переживёт зависание)
+  OK   wifi tx (ограничение мощности) есть
+  OK   wifi ps (power save) есть
+  OK   ограничение мощности применяется при подключении
+  OK   ограничение мощности сохраняется в /etc/wifi-txpower (переживёт перезагрузку)
+  OK   apply_tx определена как функция
+  OK   apply_tx вызывается в обоих путях подключения (cmd_connect и cmd_up)
+  OK   в pmic-vbus нет функции с именем mv
+  OK   преобразование отсчёта АЦП в мВ вынесено в to_mv()
+  OK   в справке wifi есть ps
+  OK   в motd есть заголовок раздела ПИТАНИЕ
+  OK   в справке wifi есть tx
+  OK   в motd есть раздел про питание
+[6f] wifi selftest (логика конфига wpa_supplicant, без железа):
+  OK   wifi selftest завершился с кодом 0
+    wifi selftest: логика конфига (временный файл /tmp/wifi-selftest.6103)
+      OK   найдено сетей (форматы 'network={' и 'network = {') = 2
+      OK   have_saved_nets видит сети
+      OK   строк в списке сетей = 2
+      OK   в списке есть First
+      OK   сетей после удаления First = 1
+      OK   блок First удалён
+      OK   соседний блок Second не пострадал
+      OK   строки вне блоков сохранены
+      OK   сетей после удаления Second (формат 'network = {') = 0
+      OK   блоков сети Dup после повторного connect = 1
+      OK   новый пароль на месте
+      OK   незакрытый блок не потерян
+    [wifi] selftest: пройдено проверок 12, провалов 0
+  OK   в wifi selftest нет провалов
+  OK   selftest выполнил проверок: 12 (>= 12)
+  OK   ломаного шаблона grep нет: ^network{
+  OK   ломаного шаблона grep нет: ^network[ \t]*{
+  OK   используется проверенный шаблон NETBLK_RE='^network[ =]*[{]'
+  OK   awk сохраняет заголовок блока network (иначе конфиг бьётся)
+  OK   команда wifi selftest есть
+  OK   wifi selftest есть в справке
+[7] i2c:
+/dev/i2c-0 /dev/i2c-1 /dev/i2c-2 
+  OK   /dev/i2c-0
+  OK   /dev/i2c-1
+  OK   /dev/i2c-2
+    i2c-0	i2c       	mv64xxx_i2c adapter             	I2C adapter
+    i2c-1	i2c       	mv64xxx_i2c adapter             	I2C adapter
+    i2c-2	i2c       	mv64xxx_i2c adapter             	I2C adapter
+[8] прошивки:
+  файлов: 73, размер: 6.2M
+  OK   regulatory.db
+  OK   rtlwifi/rtl8188eufw.bin
+  OK   rt2870.bin
+  (нет htca_9271.fw - не критично, зависит от адаптера)
+  OK   mt7601u.bin
+[9] пакетный менеджер:
+    apk-tools 2.14.4, compiled for armv7.
+    repo: https://dl-cdn.alpinelinux.org/alpine/v3.20/main
+    repo: https://dl-cdn.alpinelinux.org/alpine/v3.20/community
+  ключей: 5
+  OK   baked.txt: 54 записей
+    busybox-extras 1.36.1-r31
+    dbus-libs 1.14.10-r1
+    devmem2 0.2-r0
+    dnsmasq 2.90-r3
+    dnsmasq-common 2.90-r3
+[10] хелперы:
+  OK   accel (272 строк)
+  OK   autologin-off (7 строк)
+  OK   autologin-on (7 строк)
+  OK   bootnext (178 строк)
+  OK   cftest (114 строк)
+  OK   clk (78 строк)
+  OK   diag (103 строк)
+  OK   i2cbus (15 строк)
+  OK   info (23 строк)
+  OK   memtest (10 строк)
+  OK   pkg (332 строк)
+  OK   pmic (33 строк)
+  OK   pmic-regs (82 строк)
+  OK   pmic-vbus (173 строк)
+  OK   regs (99 строк)
+  OK   savelog (55 строк)
+  OK   usb-devices (198 строк)
+  OK   usbnet (807 строк)
+  OK   wdt (203 строк)
+  OK   whichboot (130 строк)
+  OK   wifi (1040 строк)
+  OK   hotplug (39 строк)
+  OK   rcS (43 строк)
+  OK   local (92 строк)
+  OK   autologin (2 строк)
+--- справка wifi:
+    wifi - USB-WiFi адаптер на Informer 701 (разъём на месте WiFi-модуля = USB2)
+    
+      wifi dev                 что воткнуто, какой драйвер, каких прошивок не хватает
+      wifi scan [iface]        список сетей вокруг (сигнал, канал, тип защиты)
+      wifi connect SSID [пароль] [iface]
+                               подключиться и ЗАПОМНИТЬ сеть в
+--- справка pkg:
+    pkg - пакеты Alpine 3.20 (armv7) на Informer 701
+    
+      pkg update                обновить индекс пакетов (нужен интернет и верное время)
+      pkg add <пакет> ...       установить
+      pkg del <пакет> ...       удалить
+      pkg search <строка>       поиск по имени/описанию
+--- справка accel:
+[  178.887094] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+    [accel] ОШИБКА: не удалось прочитать акселерометр (диагностика: accel info)
+[11] accel (в QEMU чипа нет - ждём ПОНЯТНУЮ ошибку, а не липовые нули):
+[  181.206882] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+    [accel] ОШИБКА: не удалось прочитать акселерометр (диагностика: accel info)
+  OK   accel read честно сообщает, что чтения нет
+  --- accel info (таймаут 30 с: скан шины в эмуляции занимает минуты) ---
+[  183.766779] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[  185.847272] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[  187.927111] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[  190.006792] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[  192.086952] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[  194.167163] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[  196.247119] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[  198.326392] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[  200.406479] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[  202.486743] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[  204.566628] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[  206.646641] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[  208.726763] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[  210.806754] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+    === диагностика акселерометра ===
+Killed
+      чип: Freescale MMA7660FC (U48), i2c-1, адрес 0x4c
+      узел DT: &i2c1 { accelerometer@4c { compatible = "fsl,mma7660" } }
+    
+      --- шины i2c ---
+        /dev/i2c-0
+        /dev/i2c-1
+        /dev/i2c-2
+        i2c-0: mv64xxx_i2c adapter
+        i2c-1: mv64xxx_i2c adapter
+        i2c-2: mv64xxx_i2c adapter
+    
+      --- что видно на шине 1 (ищем 0x4c) ---
+[12] usbnet test:
+    === диагностика USB-gadget ===
+    ядро                           6.6.0
+    /sys/class/udc                     
+    configfs                           не смонтирован (usbnet сделает сам)
+    configfs после монтирования ok
+    
+    Проверка поддержки функций (создаём временный гаджет):
+      rndis          ПОДДЕРЖИВАЕТСЯ
+      ecm            ПОДДЕРЖИВАЕТСЯ
+      ncm            ПОДДЕРЖИВАЕТСЯ
+      eem            ПОДДЕРЖИВАЕТСЯ
+      acm            ПОДДЕРЖИВАЕТСЯ
+      mass_storage   ПОДДЕРЖИВАЕТСЯ
+      ffs            ПОДДЕРЖИВАЕТСЯ
+      serial         нет
+    
+    extcon (роль OTG):
+      USB=0
+    USB-HOST=0
+    
+    USB-хост (EHCI/OHCI):
+      ehci-platform: 
+      ohci-platform: 
+    
+    dmesg (usb/musb/gadget):
+[13] dmesg (ошибки):
+[  212.910420] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+    [    0.000000] Kernel command line: console=ttyS0,115200 loglevel=4 clk_ignore_unused rdinit=/init panic=1
+    [   45.132897] WARNING: CPU: 0 PID: 110 at drivers/usb/musb/sunxi.c:406 sunxi_musb_ep_offset+0x4c/0x54
+  память: MemTotal:         508016 kB
+[14] motd:
+    
+      Informer 701  (Allwinner A10 / mainboard N708H6)   build pubtest
+      ---------------------------------------------------------------
+      UART0 = PB22/PB23 = TP20 (TX) / TP21 (RX), 115200 8N1
+      login: root / informer701
+    
+      СЕТЬ ЧЕРЕЗ USB (b017+): тот же кабель micro-USB, что и питание.
+          на плате :  usbnet on        (RNDIS - для Windows; ecm - для Linux)
+== провалено проверок: 0
+== QTEST RESULT: PASS ==
+== QTEST DONE ==
+qemu-system-arm: terminating on signal 15 from pid 15405 (bash)

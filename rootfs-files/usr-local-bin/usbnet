@@ -1,0 +1,807 @@
+#!/bin/sh
+# usbnet - USB-gadget-сеть и SSH на Informer 701 (N708H6, Allwinner A10)
+#
+# Порт micro-USB на плате - это USB0 (OTG, mini-USB разъём по схеме). Ядро 6.6
+# собрано с musb-hdrc (drivers/usb/musb/sunxi.c) и configfs-gadget, поэтому
+# плата умеет притворяться USB-сетевой картой для ПК:
+#   rndis - для Windows (встроенный драйвер, работает сразу)
+#   ecm   - для Linux/macOS (cdc_ether / CDC-ECM)
+#   ncm   - для Windows 10+ (usbncm.sys, быстрее RNDIS)
+# Поверх сети поднимается dropbear (SSH) - полноценная консоль и scp без
+# UART-адаптера. Питание платы от того же USB-порта ПК - кабель один.
+#
+# ВАЖНО про режим: узел usb_otg в DTS имеет dr_mode="otg"; ID-контакт (PH4)
+# подтянут к питанию, поэтому при кабеле в ПК ID "висит" -> phy-sun4i-usb
+# сообщает EXTCON_USB_HOST=0, EXTCON_USB=1 (VBUS от ПК) -> musb в роли
+# периферии, гаджет становится видимым для хоста. Если воткнуть в плату
+# OTG-переходник с замкнутым ID, musb переключится в хост и гаджет работать
+# не будет (это нормально, см. `usbnet host`).
+#
+# Использование: usbnet [команда] [аргумент]
+#   usbnet on [rndis|ecm|ncm|both|ser|all]  поднять гаджет (по умолчанию rndis)
+#                                           ser  = rndis + ACM (консоль в COM-порт)
+#                                           both = rndis + ecm
+#                                           all  = rndis + ecm + acm
+#   usbnet off                              снять гаджет
+#   usbnet status                           состояние USB/сети/SSH
+#   usbnet conn                             как подключиться с ПК (готовая строка)
+#   usbnet ssh on|off|status|keys           dropbear отдельно
+#   usbnet eth                              поднять USB-Ethernet-адаптер (udhcpc)
+#   usbnet nat [on|off|status]              интернет на плату с ПК по тому же
+#                                           USB-кабелю (ICS в Windows)
+#   usbnet host                             что видно на USB-хосте (флешки, адаптеры)
+#   usbnet mount                            примонтировать найденную флешку
+#   usbnet auto on|off                      автозапуск гаджета+SSH при загрузке
+#   usbnet log                              USB/gadget-строки из dmesg
+#   usbnet test                             диагностика поддержки в ядре
+#
+# Настройки - в /etc/usbnet.conf (создаётся при первом запуске).
+
+CFG=/sys/kernel/config
+GNAME=g1
+G="$CFG/usb_gadget/$GNAME"
+CONF=/etc/usbnet.conf
+STATE=/run/usbnet.state          # "mode rndis iface usb0 ..."
+IFACES=/run/usbnet.ifaces         # имена интерфейсов гаджета (по одному в строке)
+UDHCPD_CONF=/etc/udhcpd-usb0.conf
+
+# PATH нужен полный: при автозапуске из /etc/init.d/local наследуется PATH
+# init'а (без /usr/local/bin), а там лежат udhcpd и dumpleases.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+# ------------------------------------------------------------------- defaults
+IP_MAIN=192.168.77.1
+MASK_MAIN=24
+IP_LL=169.254.77.1               # запасной адрес: совместим с APIPA Windows
+MASK_LL=16                       # (169.254.x.x/16 ПК назначит себе сам)
+IP_MAIN2=192.168.78.1            # вторая подсеть - для 2-го интерфейса (both/all)
+DHCP_FIRST=20
+DHCP_LAST=60
+HOST_MAC=02:70:01:70:01:01       # MAC, который увидит ПК
+DEV_MAC=02:70:01:70:01:02        # MAC самого интерфейса на плате
+SSH_PORT=22
+MODE_DEFAULT=rndis
+ROOT_PASS_HINT=informer701
+
+say()  { printf '%s\n' "$*"; }
+ok()   { printf '[usbnet] %s\n' "$*"; }
+warn() { printf '[usbnet] ВНИМАНИЕ: %s\n' "$*" >&2; }
+die()  { printf '[usbnet] ОШИБКА: %s\n' "$*" >&2; exit 1; }
+
+# ------------------------------------------------------------- конфигурация
+load_conf() {
+    if [ ! -f "$CONF" ]; then
+        cat > "$CONF" <<EOF
+# /etc/usbnet.conf - настройки USB-сети (читает usbnet). Значения по умолчанию.
+IP_MAIN=$IP_MAIN          # адрес платы на интерфейсе гаджета
+MASK_MAIN=$MASK_MAIN
+IP_MAIN2=$IP_MAIN2        # адрес второго интерфейса (режимы both/all)
+IP_LL=$IP_LL              # запасной link-local адрес (совместим с APIPA Windows)
+MASK_LL=$MASK_LL
+DHCP_FIRST=$DHCP_FIRST    # пул udhcpd: IP_MAIN с .FIRST по .LAST
+DHCP_LAST=$DHCP_LAST
+HOST_MAC=$HOST_MAC        # MAC, который видит ПК
+DEV_MAC=$DEV_MAC          # MAC usb0 на плате
+SSH_PORT=$SSH_PORT
+MODE_DEFAULT=$MODE_DEFAULT
+GNAME=$GNAME
+EOF
+    fi
+    # shellcheck disable=SC1090
+    . "$CONF" 2>/dev/null
+    G="$CFG/usb_gadget/$GNAME"
+}
+
+need_root() { [ "$(id -u)" -eq 0 ] || die "нужны права root"; }
+
+have_udc() {
+    UDC=$(ls /sys/class/udc 2>/dev/null | head -1)
+    [ -n "$UDC" ]
+}
+
+mount_configfs() {
+    [ -d "$CFG/usb_gadget" ] && return 0
+    mountpoint -q "$CFG" 2>/dev/null || mount -t configfs none "$CFG" 2>/dev/null
+    [ -d "$CFG/usb_gadget" ] || die "configfs недоступен (CONFIGFS_FS в ядре?)"
+}
+
+# ------------------------------------------------------------------- SSH
+ssh_keys() {
+    need_root
+    mkdir -p /etc/dropbear
+    chmod 700 /etc/dropbear
+    [ -x /usr/sbin/dropbear ] || [ -x /usr/bin/dropbear ] || die "dropbear не установлен"
+    DBK=/usr/bin/dropbearkey
+    [ -x "$DBK" ] || DBK=/usr/sbin/dropbearkey
+    for t in ed25519 ecdsa; do
+        f="/etc/dropbear/dropbear_${t}_host_key"
+        if [ ! -s "$f" ]; then
+            "$DBK" -t "$t" -f "$f" >/dev/null 2>&1 && ok "ключ хоста $t создан" \
+                || warn "не удалось создать ключ $t"
+        fi
+    done
+    # RSA - самый медленный, поэтому размер ограничен 2048
+    f=/etc/dropbear/dropbear_rsa_host_key
+    if [ ! -s "$f" ]; then
+        "$DBK" -t rsa -s 2048 -f "$f" >/dev/null 2>&1 && ok "ключ хоста rsa создан" \
+            || warn "не удалось создать ключ rsa"
+    fi
+    chmod 600 /etc/dropbear/* 2>/dev/null
+}
+
+ssh_on() {
+    need_root
+    if ssh_running; then ok "dropbear уже работает (pid $(cat /run/dropbear.pid))"; return 0; fi
+    [ -s /etc/dropbear/dropbear_ed25519_host_key ] || [ -s /etc/dropbear/dropbear_rsa_host_key ] \
+        || ssh_keys
+    mkdir -p /root/.ssh; chmod 700 /root/.ssh
+    # -R: если ключей всё же нет, dropbear сгенерирует их на лету
+    /usr/sbin/dropbear -R -P /run/dropbear.pid -p "$SSH_PORT" 2>/dev/null
+    sleep 1
+    if ssh_running; then
+        touch /etc/ssh-enabled
+        ok "dropbear слушает порт $SSH_PORT (pid $(cat /run/dropbear.pid))"
+    else
+        warn "dropbear не запустился - смотрите 'usbnet log' и dmesg"
+        return 1
+    fi
+}
+
+ssh_off() {
+    need_root
+    if [ -f /run/dropbear.pid ]; then
+        kill "$(cat /run/dropbear.pid)" 2>/dev/null && rm -f /run/dropbear.pid
+    fi
+    # добиваем всё, что осталось (busybox killall)
+    killall dropbear 2>/dev/null
+    rm -f /etc/ssh-enabled
+    ok "dropbear остановлен"
+}
+
+ssh_running() {
+    [ -f /run/dropbear.pid ] && kill -0 "$(cat /run/dropbear.pid 2>/dev/null)" 2>/dev/null
+}
+
+ssh_status() {
+    if ssh_running; then
+        say "dropbear: работает (pid $(cat /run/dropbear.pid)), порт $SSH_PORT"
+        netstat -tln 2>/dev/null | grep -E ":$SSH_PORT\b" | head -3
+        say "подключений: $(netstat -tn 2>/dev/null | grep -c ":$SSH_PORT .*ESTABLISHED")"
+    else
+        say "dropbear: остановлен  (запуск: usbnet ssh on)"
+    fi
+    [ -f /etc/ssh-enabled ] && say "автозапуск SSH: включён" || say "автозапуск SSH: выключен"
+}
+
+# --------------------------------------------------------------- гаджет
+gadget_unbind() {
+    [ -f "$G/UDC" ] || return 0
+    cur=$(cat "$G/UDC" 2>/dev/null)
+    [ -n "$cur" ] && { echo "" > "$G/UDC" 2>/dev/null; sleep 1; }
+}
+
+gadget_remove() {
+    # снимаем привязку, затем удаляем симлинки функций и сами каталоги
+    gadget_unbind
+    [ -d "$G" ] || return 0
+    for l in "$G"/configs/c.1/*; do
+        case "$l" in */strings|*/MaxPower) continue;; esac
+        [ -L "$l" ] && rm -f "$l"
+    done
+    [ -L "$G/os_desc/c.1" ] && rm -f "$G/os_desc/c.1"
+    for d in "$G"/functions/*; do
+        [ -d "$d" ] && rmdir "$d" 2>/dev/null
+    done
+    rmdir "$G/configs/c.1/strings/0x409" 2>/dev/null
+    rmdir "$G/configs/c.1/strings" 2>/dev/null
+    rmdir "$G/configs/c.1" 2>/dev/null
+    rmdir "$G/strings/0x409" 2>/dev/null
+    rmdir "$G/strings" 2>/dev/null
+    rmdir "$G" 2>/dev/null
+    rm -f "$STATE" "$IFACES"
+}
+
+# mkfunc <тип> <имя_инстанса> - создаёт функцию и привязывает её к c.1
+mkfunc() {
+    t=$1; inst=$2
+    d="$G/functions/$t.$inst"
+    mkdir -p "$d" 2>/dev/null || { warn "не удалось создать функцию $t"; return 1; }
+    case "$t" in
+        rndis|ecm|ncm|eem)
+            [ -f "$d/host_addr" ] && echo "$HOST_MAC" > "$d/host_addr" 2>/dev/null
+            [ -f "$d/dev_addr" ]  && echo "$DEV_MAC"  > "$d/dev_addr"  2>/dev/null
+            ;;
+    esac
+    if [ "$t" = rndis ]; then
+        # MS OS Descriptors: без них Windows тоже распознаёт RNDIS по классу
+        # E0/01/03, но с ними адаптер называется понятно и стабильно
+        i="$d/os_desc/interface.rndis"
+        if [ -d "$i" ]; then
+            echo RNDIS   > "$i/compatible_id"     2>/dev/null
+            echo 5162001 > "$i/sub_compatible_id" 2>/dev/null
+        else
+            warn "нет $i (MS OS Descriptors недоступны)"
+        fi
+    fi
+    ln -s "$d" "$G/configs/c.1/" 2>/dev/null || { warn "не привязал $t.$inst к c.1"; return 1; }
+    return 0
+}
+
+gadget_on() {
+    need_root
+    mode=${1:-$MODE_DEFAULT}
+    have_udc || die "нет UDC в /sys/class/udc - узел usb_otg выключен в этом DTB.
+        Загрузитесь с вариантом, где USB включён (bootnext usbnet / host), или
+        проверьте 'usbnet test'."
+    mount_configfs
+    gadget_remove            # всегда собираем заново - идемпотентно
+    mkdir -p "$G" || die "не создался $G"
+    cd "$G" || die "нет $G"
+
+    echo 0x1d6b > idVendor            # Linux Foundation
+    echo 0x0104 > idProduct           # Multifunction Composite Gadget
+    echo 0x0200 > bcdUSB              # USB 2.0
+    echo 0x0100 > bcdDevice
+    mkdir -p strings/0x409
+    echo "0000-informer701"        > strings/0x409/serialnumber
+    echo "Informer 701 (A10)"      > strings/0x409/manufacturer
+    echo "USB network gadget"      > strings/0x409/product
+    mkdir -p configs/c.1/strings/0x409
+    echo "$mode"                   > configs/c.1/strings/0x409/configuration
+    echo 250                       > configs/c.1/MaxPower   # 500 мА (единицы по 2 мА)
+
+    # MS OS Descriptors (для Windows)
+    echo 1       > os_desc/use             2>/dev/null
+    echo 0xbc    > os_desc/b_vendor_code   2>/dev/null
+    echo MSFT100 > os_desc/qw_sign         2>/dev/null
+
+    want_net=1; want_ser=0
+    case "$mode" in
+        rndis)  mkfunc rndis usb0 ;;
+        ecm)    mkfunc ecm   usb0 ;;
+        ncm)    mkfunc ncm   usb0 ;;
+        both)   mkfunc rndis usb0; mkfunc ecm usb0 ;;
+        ser)    mkfunc rndis usb0; want_ser=1 ;;
+        all)    mkfunc rndis usb0; mkfunc ecm usb0; want_ser=1 ;;
+        *)      die "неизвестный режим '$mode' (rndis|ecm|ncm|both|ser|all)" ;;
+    esac
+    if [ "$want_ser" = 1 ]; then
+        mkdir -p "$G/functions/acm.GS0" 2>/dev/null \
+            && ln -s "$G/functions/acm.GS0" "$G/configs/c.1/" 2>/dev/null \
+            || warn "не удалось добавить ACM (консоль в COM-порт)"
+    fi
+
+    # привязываем конфигурацию к os_desc (после функций!) и гаджет к UDC
+    ln -s "$G/configs/c.1" "$G/os_desc" 2>/dev/null
+    echo "$UDC" > UDC || die "не удалось привязать гаджет к $UDC"
+    sleep 2
+
+    # имена сетевых интерфейсов именно НАШЕГО гаджета (usb0, usb1, ...).
+    # Отбирать надо строго: в системе могут быть и другие usb*-интерфейсы -
+    # например USB-Ethernet-адаптер, воткнутый в хостовый порт (он тоже
+    # называется usb0/usb1!). Ему нельзя менять адреса, поэтому смотрим,
+    # чей это netdev: у гаджета device -> .../gadget.N (u_ether.c делает
+    # SET_NETDEV_DEV(net,&g->dev)), у хостового устройства -> .../usbN/M-P
+    # с атрибутами busnum/idVendor (usbnet.c: SET_NETDEV_DEV(net,&udev->dev)).
+    : > "$IFACES"
+    try=0
+    while [ "$try" -lt 5 ]; do
+        : > "$IFACES"
+        for n in /sys/class/net/usb*; do
+            [ -e "$n" ] || continue
+            is_gadget_iface "$(basename "$n")" || continue
+            basename "$n" >> "$IFACES"
+        done
+        [ -s "$IFACES" ] && break
+        try=$((try+1)); sleep 1
+    done
+    iface=$(head -1 "$IFACES" 2>/dev/null)
+    [ -n "$iface" ] || die "гаджет привязан, но сетевой интерфейс не появился"
+    nf=$(wc -l < "$IFACES")
+    case "$mode" in
+        both|all) [ "$nf" -ge 2 ] || warn "ожидалось 2 интерфейса (rndis+ecm), нашлось $nf" ;;
+    esac
+    echo "mode $mode iface $iface udc $UDC" > "$STATE"
+
+    # первому интерфейсу - основная подсеть (+ link-local запасной),
+    # остальным (режимы both/all: rndis+ecm) - вторая подсеть, иначе ПК,
+    # привязавшийся ко второй функции, не смог бы достучаться до платы
+    n=0
+    for i in $(cat "$IFACES"); do
+        if [ "$n" -eq 0 ]; then
+            net_up "$i" "$IP_MAIN"  "$MASK_MAIN" "$IP_LL" "$MASK_LL"
+            dhcp_on "$i" "$IP_MAIN"
+        else
+            net_up "$i" "$IP_MAIN2" "$MASK_MAIN" "" ""
+            dhcp_on "$i" "$IP_MAIN2"
+        fi
+        n=$((n+1))
+    done
+    [ "$want_ser" = 1 ] && serial_on
+    ssh_on
+    ok "гаджет '$mode' поднят на $UDC, интерфейс $iface"
+    conn_info
+}
+
+# 0 = интерфейс принадлежит нашему USB-гаджету, 1 = чужой (хостовый адаптер)
+is_gadget_iface() {
+    _n=$1
+    [ -e "/sys/class/net/$_n" ] || return 1
+    _d=$(readlink -f "/sys/class/net/$_n/device" 2>/dev/null)
+    # нет ссылки device - определить не можем, не отсеиваем (лучше поднять сеть)
+    [ -n "$_d" ] || return 0
+    _b=${_d##*/}
+    case "$_b" in gadget*) return 0 ;; esac          # netdev гаджета (u_ether.c)
+    case "$_d" in *"$UDC"*) return 0 ;; esac         # запасной признак: путь UDC
+    # хостовый USB-адаптер: device -> USB-интерфейс (есть bInterfaceNumber),
+    # а у его родителя-устройства есть busnum/idVendor
+    [ -e "$_d/bInterfaceNumber" ] && return 1
+    _p=$(readlink -f "$_d/.." 2>/dev/null)
+    if [ -n "$_p" ] && [ -e "$_p/busnum" ] && [ -e "$_p/idVendor" ]; then return 1; fi
+    return 0
+}
+
+net_up() {
+    iface=$1; ipm=$2; mask=$3; ipl=$4; maskl=$5
+    ip link set "$iface" up 2>/dev/null || warn "ip link set $iface up не сработал"
+    ip addr flush dev "$iface" 2>/dev/null
+    ip addr add "$ipm/$mask" dev "$iface" 2>/dev/null
+    # второй (link-local) адрес: если DHCP на ПК не отработал, Windows сам
+    # назначит себе 169.254.x.x/16 (APIPA) и мы останемся в одной подсети
+    [ -n "$ipl" ] && ip addr add "$ipl/$maskl" dev "$iface" 2>/dev/null
+    ip link set "$iface" mtu 1500 2>/dev/null
+    if [ -n "$ipl" ]; then
+        ok "$iface = $ipm/$mask (+ $ipl/$maskl)"
+    else
+        ok "$iface = $ipm/$mask"
+    fi
+}
+
+dhcp_on() {
+    iface=$1; ipm=$2
+    command -v udhcpd >/dev/null 2>&1 || { warn "udhcpd не установлен - ПК получит адрес сам (APIPA)"; return 0; }
+    conf="/etc/udhcpd-$iface.conf"
+    base=$(echo "$ipm" | sed 's/\.[0-9]*$//')
+    cat > "$conf" <<EOF
+# создан usbnet: DHCP только для USB-интерфейса гаджета
+interface	$iface
+start		$base.$DHCP_FIRST
+end		$base.$DHCP_LAST
+max_leases	$((DHCP_LAST - DHCP_FIRST + 1))
+option	subnet	255.255.255.0
+option	lease	86400
+lease_file	/run/udhcpd-$iface.leases
+pidfile		/run/udhcpd-$iface.pid
+auto_time	30
+# router/dns намеренно НЕ отдаём: иначе ПК пропишет себе наш адрес шлюзом
+# и потеряет интернет
+EOF
+    udhcpd "$conf" 2>/dev/null && ok "udhcpd на $iface: $base.$DHCP_FIRST-$base.$DHCP_LAST" \
+        || warn "udhcpd не запустился (интерфейс поднят? $iface)"
+}
+
+dhcp_off() { killall udhcpd 2>/dev/null; rm -f /run/udhcpd*.pid /run/udhcpd*.leases; }
+
+serial_on() {
+    [ -e /dev/ttyGS0 ] || { warn "/dev/ttyGS0 нет - ACM не поднялся"; return 0; }
+    [ -f /run/ttyGS0.pid ] && kill "$(cat /run/ttyGS0.pid)" 2>/dev/null
+    setsid /sbin/getty -n -L -l /sbin/autologin 115200 ttyGS0 >/dev/null 2>&1 &
+    echo "$!" > /run/ttyGS0.pid
+    ok "консоль в /dev/ttyGS0: на ПК появится COM-порт (115200, вход без пароля)"
+}
+
+serial_off() {
+    [ -f /run/ttyGS0.pid ] && { kill "$(cat /run/ttyGS0.pid)" 2>/dev/null; rm -f /run/ttyGS0.pid; }
+}
+
+gadget_off() {
+    need_root
+    load_conf
+    serial_off
+    dhcp_off
+    if [ -d "$G" ]; then
+        gadget_remove
+        ok "гаджет снят"
+    else
+        ok "гаджет не был создан"
+    fi
+    if [ -f "$IFACES" ]; then
+        # ждём, пока ядро освободит имена интерфейсов (иначе при повторном
+        # `usbnet on` новый гаджет может получить "чужое" имя и мы перепутаем
+        # его с уже не существующим)
+        t=0
+        while [ "$t" -lt 5 ]; do
+            left=0
+            for i in $(cat "$IFACES"); do
+                [ -e "/sys/class/net/$i" ] && left=1
+            done
+            [ "$left" = 0 ] && break
+            t=$((t+1)); sleep 1
+        done
+        for i in $(cat "$IFACES"); do ip link set "$i" down 2>/dev/null; done
+        rm -f "$IFACES"
+    fi
+    rm -f "$STATE"
+}
+
+# ------------------------------------------------------------------- инфо
+conn_info() {
+    say ""
+    say "Подключение с ПК (тот же USB-кабель):"
+    say "    ssh root@$IP_MAIN        пароль: $ROOT_PASS_HINT"
+    say "    scp файл root@$IP_MAIN:/root/"
+    say "Если ПК не получил адрес по DHCP (подождите ~30-60 с, пока Windows"
+    say "назначит себе 169.254.x.x, либо пропишите вручную $IP_MAIN/24):"
+    say "    ssh root@$IP_LL"
+    say ""
+}
+
+status() {
+    load_conf
+    say "=== ядро / сборка ==="
+    say "uname:   $(uname -r)"
+    [ -f /etc/build-id ] && say "сборка:  $(cat /etc/build-id)"
+    say ""
+    say "=== USB (роль и состояние) ==="
+    if have_udc; then
+        say "UDC:     $UDC"
+        st=$(cat "/sys/class/udc/$UDC/state" 2>/dev/null)
+        say "state:   ${st:-неизвестно}"
+        case "$st" in
+            configured) say "         -> хост настроил устройство, сеть должна работать";;
+            address|default) say "         -> хост начал enumeration (кабель вставлен)";;
+            powered|attached) say "         -> VBUS есть, но хост ещё не обратился (драйвер на ПК?)";;
+            "not attached") say "         -> кабель не вставлен или ПК не подаёт VBUS";;
+        esac
+        [ -f "/sys/class/udc/$UDC/current_speed" ] && \
+            say "скорость: $(cat /sys/class/udc/$UDC/current_speed)"
+    else
+        say "UDC:     НЕТ - узел usb_otg выключён в текущем DTB (см. 'usbnet test')"
+    fi
+    for e in /sys/class/extcon/extcon*/state; do
+        [ -e "$e" ] || continue
+        say "extcon:  $(cat "$e" 2>/dev/null)"
+    done
+    say ""
+    say "=== гаджет ==="
+    if [ -f "$STATE" ]; then
+        say "$(cat "$STATE")"
+        say "UDC в гаджете: $(cat "$G/UDC" 2>/dev/null)"
+    else
+        say "не поднят (usbnet on)"
+    fi
+    say ""
+    say "=== сеть ==="
+    addrs=$(ip -o addr 2>/dev/null | awk '{print "  " $2 " " $4}')
+    if [ -n "$addrs" ]; then
+        say "$addrs"
+    else
+        ifconfig -a 2>/dev/null | grep -E '^[a-z]|inet ' | sed 's/^/  /'
+    fi
+    ip route 2>/dev/null | grep default | sed 's/^/  маршрут: /'
+    say ""
+    say "=== DHCP-сервер ==="
+    any=0
+    for pf in /run/udhcpd-*.pid; do
+        [ -e "$pf" ] || continue
+        pid=$(cat "$pf" 2>/dev/null)
+        kill -0 "$pid" 2>/dev/null || continue
+        any=1
+        say "udhcpd работает (pid $pid, $(basename "$pf" .pid | sed 's/udhcpd-//'))"
+        lf="/run/$(basename "$pf" .pid).leases"
+        [ -f "$lf" ] && dumpleases -f "$lf" 2>/dev/null | head -4 | sed 's/^/    /'
+    done
+    [ "$any" = 1 ] || say "udhcpd не запущен"
+    say ""
+    say "=== SSH ==="
+    ssh_status
+    say ""
+    say "=== USB-хост (для будущего разъёма на месте WiFi) ==="
+    n=$(ls -d /sys/bus/usb/devices/*/ 2>/dev/null | wc -l)
+    say "устройств на шине: ${n:-0}"
+    host_list
+    say ""
+    say "=== консоль в COM-порт ==="
+    if [ -f /run/ttyGS0.pid ] && kill -0 "$(cat /run/ttyGS0.pid)" 2>/dev/null; then
+        say "getty на ttyGS0 работает"
+    else
+        say "не запущена (usbnet on ser)"
+    fi
+}
+
+host_list() {
+    for d in /sys/bus/usb/devices/*; do
+        [ -e "$d/idVendor" ] || continue
+        b=$(basename "$d")
+        v=$(cat "$d/idVendor" 2>/dev/null)
+        p=$(cat "$d/idProduct" 2>/dev/null)
+        prod=$(cat "$d/product" 2>/dev/null)
+        man=$(cat "$d/manufacturer" 2>/dev/null)
+        say "  $b  $v:$p  ${prod:-?} ${man:+($man)}"
+    done
+}
+
+# ------------------------------------------------------- USB-Ethernet адаптер
+eth_up() {
+    need_root
+    load_conf
+    found=0
+    for i in /sys/class/net/*; do
+        [ -e "$i" ] || continue
+        n=$(basename "$i")
+        [ "$n" = lo ] && continue
+        # пропускаем интерфейсы гаджета
+        if [ -f "$IFACES" ] && grep -qx "$n" "$IFACES" 2>/dev/null; then continue; fi
+        # только те, у кого есть USB-родитель
+        [ -e "$i/device" ] || continue
+        case "$(readlink -f "$i/device" 2>/dev/null)" in
+            */usb*) ;;
+            *) continue;;
+        esac
+        found=1
+        say "  поднимаю $n (udhcpc)..."
+        ip link set "$n" up 2>/dev/null
+        if udhcpc -i "$n" -q -t 8 -T 2 -n 2>/dev/null; then
+            ip -o addr show dev "$n" 2>/dev/null | awk '{print "    " $2 " = " $4}'
+            say "    шлюз: $(ip route 2>/dev/null | awk '/default/ {print $3; exit}')"
+        else
+            say "    DHCP не ответил (кабель вставлен? линк есть?)"
+            cat "$i/carrier" 2>/dev/null | sed 's/^/    carrier: /'
+        fi
+    done
+    [ "$found" = 1 ] || say "USB-Ethernet адаптер не найден (см. 'usbnet host')"
+    ssh_running || ssh_on
+}
+
+# ------------------------------------------- интернет с ПК по USB (usbnet nat)
+# Сценарий: на ПК включён "общий доступ к интернету" (Windows ICS) на USB-сетевой
+# адаптер платы. Тогда Windows сам становится DHCP-сервером (обычно 192.168.137.1)
+# и раздаёт адреса 192.168.137.x, а наш udhcpd в этом сегменте ЛИШНИЙ - два
+# DHCP-сервера = лотерея. Поэтому nat on: гасим udhcpd, становимся клиентом,
+# получаем адрес/шлюз/DNS. Адрес платы МЕНЯЕТСЯ - он печатается, и его же надо
+# использовать для ssh (запасной link-local 169.254.77.1 остаётся).
+nat_script() {
+    cat > /run/udhcpc-nat.script <<'EOS'
+#!/bin/sh
+# создан usbnet: обработка ответа DHCP-сервера на ПК (Windows ICS)
+case "$1" in
+    deconfig) /sbin/ip addr flush dev "$interface" 2>/dev/null ;;
+    bound|renew)
+        /sbin/ip addr flush dev "$interface" 2>/dev/null
+        /sbin/ip addr add "$ip/${mask:-24}" dev "$interface" 2>/dev/null
+        /sbin/ip link set "$interface" up 2>/dev/null
+        [ -n "$router" ] && /sbin/ip route replace default via "$router" dev "$interface"
+        : > /etc/resolv.conf
+        for d in $dns; do echo "nameserver $d" >> /etc/resolv.conf; done
+        echo "$ip/${mask:-24} gw=${router:-нет} dns=$dns" > /run/usbnet-nat.info
+        ;;
+    leasefail|nak) echo "DHCP не ответил ($1)" > /run/usbnet-nat.info ;;
+esac
+EOS
+    chmod 755 /run/udhcpc-nat.script
+}
+
+gadget_iface() {
+    # первый интерфейс гаджета (usb0 для rndis/ecm/ncm)
+    if [ -f "$IFACES" ]; then head -1 "$IFACES"; return 0; fi
+    for i in /sys/class/net/*; do
+        n=$(basename "$i"); [ "$n" = lo ] && continue
+        is_gadget_iface "$n" && { echo "$n"; return 0; }
+    done
+    return 1
+}
+
+nat_on() {
+    need_root; load_conf
+    ifc=$(gadget_iface)
+    [ -n "$ifc" ] || die "нет интерфейса гаджета - сначала 'usbnet on'"
+    ok "NAT через ПК: интерфейс $ifc"
+    dhcp_off
+    say "  udhcpd остановлен (DHCP теперь раздаёт ПК)"
+    rm -f /run/usbnet-nat.info
+    nat_script
+    ip link set "$ifc" up 2>/dev/null
+    killall udhcpc 2>/dev/null
+    if udhcpc -i "$ifc" -q -t 12 -T 2 -n -s /run/udhcpc-nat.script >/dev/null 2>&1; then
+        addr=$(ip -4 -o addr show dev "$ifc" 2>/dev/null | awk '{print $4}' | head -1)
+        gw=$(ip route 2>/dev/null | awk '/^default/ {print $3; exit}')
+        ok "$ifc = ${addr:-?}  шлюз ${gw:-?}"
+        ip addr add "$IP_LL/$MASK_LL" dev "$ifc" 2>/dev/null
+        grep -h nameserver /etc/resolv.conf 2>/dev/null | sed 's/^/  /'
+        say "  проверяю интернет..."
+        if ping -c1 -W3 "${gw:-8.8.8.8}" >/dev/null 2>&1; then say "  шлюз отвечает: да"; else say "  шлюз НЕ отвечает"; fi
+        if ping -c1 -W3 1.1.1.1 >/dev/null 2>&1; then
+            say "  1.1.1.1: ОК"
+            if ping -c1 -W3 dl-cdn.alpinelinux.org >/dev/null 2>&1; then say "  DNS работает (dl-cdn.alpinelinux.org)"; else say "  DNS НЕ работает: пропишите nameserver вручную (см. /etc/resolv.conf)"; fi
+        else
+            say "  1.1.1.1: нет ответа (проверьте ICS на ПК и файрвол)"
+        fi
+        ok "теперь работает: pkg update && pkg add <имя>"
+        ok "ssh на плату: ssh root@${addr%%/*}   (или ssh root@$IP_LL)"
+    else
+        warn "DHCP от ПК не получен. На ПК: свойства активного подключения ->"
+        warn "  Доступ -> 'Разрешить другим пользователям использовать подключение"
+        warn "  этого компьютера' -> выбрать адаптер RNDIS платы."
+        warn "Возврат к прежней схеме: usbnet nat off"
+        ip addr add "$IP_MAIN/$MASK_MAIN" dev "$ifc" 2>/dev/null
+        ip addr add "$IP_LL/$MASK_LL" dev "$ifc" 2>/dev/null
+        dhcp_on "$ifc" "$IP_MAIN"
+    fi
+    ssh_running || ssh_on
+}
+
+nat_off() {
+    need_root; load_conf
+    ifc=$(gadget_iface)
+    [ -n "$ifc" ] || die "нет интерфейса гаджета"
+    killall udhcpc 2>/dev/null
+    ip route del default 2>/dev/null
+    net_up "$ifc" "$IP_MAIN" "$MASK_MAIN" "$IP_LL" "$MASK_LL"
+    dhcp_on "$ifc" "$IP_MAIN"
+    rm -f /run/usbnet-nat.info
+    ok "возврат к обычной схеме: плата $IP_MAIN/$MASK_MAIN, ssh root@$IP_MAIN"
+    ssh_running || ssh_on
+}
+
+mount_usb() {
+    need_root
+    found=0
+    for b in /sys/block/sd*; do
+        [ -e "$b" ] || continue
+        dev=/dev/$(basename "$b")
+        for p in ${dev}*[0-9] $dev; do
+            [ -b "$p" ] || continue
+            mp=/mnt/$(basename "$p")
+            mountpoint -q "$mp" 2>/dev/null && continue
+            mkdir -p "$mp"
+            if mount "$p" "$mp" 2>/dev/null; then
+                say "  $p -> $mp"; ls "$mp" | head -8 | sed 's/^/     /'; found=1
+            else
+                rmdir "$mp" 2>/dev/null
+            fi
+        done
+    done
+    [ "$found" = 1 ] || say "съёмных носителей не найдено (см. 'usbnet host')"
+}
+
+# ------------------------------------------------------------- автозапуск
+auto_set() {
+    need_root
+    case "$1" in
+        on)
+            touch /etc/usbnet-enabled /etc/ssh-enabled
+            ok "автозапуск включён: при загрузке поднимется гаджет ($MODE_DEFAULT) и SSH"
+            say "проверка: ls -l /etc/usbnet-enabled /etc/ssh-enabled"
+            ;;
+        off)
+            rm -f /etc/usbnet-enabled /etc/ssh-enabled
+            ok "автозапуск выключен (гаджет можно поднять вручную: usbnet on)"
+            ;;
+        *)
+            [ -f /etc/usbnet-enabled ] && say "автозапуск гаджета: ВКЛЮЧЁН" || say "автозапуск гаджета: выключен"
+            [ -f /etc/ssh-enabled ] && say "автозапуск SSH:     ВКЛЮЧЁН" || say "автозапуск SSH:     выключен"
+            ;;
+    esac
+}
+
+# ------------------------------------------------------------- диагностика
+selftest() {
+    load_conf
+    say "=== диагностика USB-gadget ==="
+    printf '%-34s %s\n' "ядро" "$(uname -r)"
+    printf '%-34s %s\n' "/sys/class/udc" "$(ls /sys/class/udc 2>/dev/null | tr '\n' ' ' || echo 'ПУСТО')"
+    if have_udc; then
+        drv=$(readlink -f "/sys/class/udc/$UDC/device/driver" 2>/dev/null)
+        printf '%-34s %s\n' "драйвер UDC" "${drv:-?}"
+    fi
+    printf '%-34s %s\n' "configfs" "$([ -d "$CFG/usb_gadget" ] && echo 'смонтирован' || echo 'не смонтирован (usbnet сделает сам)')"
+    mount_configfs 2>/dev/null
+    printf '%-34s %s\n' "configfs после монтирования" "$([ -d "$CFG/usb_gadget" ] && echo ok || echo НЕТ)"
+    # доступные функции гаджета (каталоги создаются при mkdir, но список видно
+    # по наличию модулей/встроенных драйверов в /sys/kernel/config/usb_gadget)
+    say ""
+    say "Проверка поддержки функций (создаём временный гаджет):"
+    tmp="$CFG/usb_gadget/__test"
+    mkdir -p "$tmp/functions" 2>/dev/null
+    for f in rndis ecm ncm eem acm mass_storage ffs serial; do
+        if mkdir -p "$tmp/functions/$f.t" 2>/dev/null; then
+            printf '  %-14s ПОДДЕРЖИВАЕТСЯ\n' "$f"
+            rmdir "$tmp/functions/$f.t" 2>/dev/null
+        else
+            printf '  %-14s нет\n' "$f"
+        fi
+    done
+    rmdir "$tmp/functions" "$tmp" 2>/dev/null
+    say ""
+    say "extcon (роль OTG):"
+    for e in /sys/class/extcon/extcon*/state; do
+        [ -e "$e" ] || continue
+        say "  $(cat "$e")"
+    done
+    say ""
+    say "USB-хост (EHCI/OHCI):"
+    for h in /sys/bus/platform/drivers/*ehci* /sys/bus/platform/drivers/*ohci*; do
+        [ -d "$h" ] || continue
+        say "  $(basename "$h"): $(ls "$h" 2>/dev/null | grep -v '^bind$\|^unbind$\|^module$\|^uevent$\|^.*\.\(drv\|link\)$' | tr '\n' ' ')"
+    done
+    say ""
+    say "dmesg (usb/musb/gadget):"
+    dmesg 2>/dev/null | grep -iE 'musb|gadget|usb|ehci|ohci|phy' | tail -20 | sed 's/^/  /'
+}
+
+show_log() {
+    dmesg 2>/dev/null | grep -iE 'musb|gadget|configfs|rndis|ecm|usb0|udc' | tail -40
+}
+
+usage() {
+    cat <<EOF
+usbnet - USB-gadget-сеть и SSH на Informer 701 (N708H6, Allwinner A10)
+
+Микро-USB порт платы = USB0 (OTG). Плата притворяется USB-сетевой картой
+для ПК, поверх сети работает dropbear (SSH + scp). Кабель один: он же питание.
+
+Команды:
+  usbnet on [rndis|ecm|ncm|both|ser|all]
+                 поднять гаджет. rndis - Windows (по умолчанию),
+                 ecm - Linux/macOS, ncm - Windows 10+ (быстрее),
+                 both - rndis+ecm, ser - rndis+ACM (консоль в COM-порт),
+                 all - rndis+ecm+acm
+  usbnet off     снять гаджет (интерфейсы, udhcpd, getty)
+  usbnet status  всё состояние: роль OTG, UDC, гаджет, IP, DHCP, SSH, хост
+  usbnet conn    готовая строка подключения с ПК
+  usbnet ssh on|off|status|keys
+                 dropbear отдельно (ключи хоста создаются один раз)
+  usbnet eth     поднять USB-Ethernet-адаптер через udhcpc (для разъёма,
+                 впаянного на место WiFi-модуля)
+  usbnet nat     интернет через ПК по тому же USB-кабелю: плата становится
+                 DHCP-клиентом, на ПК включается "общий доступ к интернету".
+                 Нужно для pkg add. Обратное действие: usbnet nat off
+                 (адрес платы при этом МЕНЯЕТСЯ - новый печатается)
+  usbnet nat status   текущий адрес/шлюз/DNS в режиме nat
+  usbnet host    что видно на USB-хосте (адаптеры, флешки)
+  usbnet mount   примонтировать найденную флешку в /mnt/<имя>
+  usbnet auto on|off
+                 автозапуск гаджета и SSH при каждой загрузке
+  usbnet test    диагностика: есть ли UDC, какие функции поддерживает ядро
+  usbnet log     USB/gadget-строки из dmesg
+
+Адреса: плата $IP_MAIN/$MASK_MAIN (и запасной $IP_LL/$MASK_LL),
+ПК получает $IP_MAIN с .$DHCP_FIRST по .$DHCP_LAST от udhcpd.
+Вход: ssh root@$IP_MAIN   пароль $ROOT_PASS_HINT
+Настройки: /etc/usbnet.conf
+EOF
+}
+
+# ------------------------------------------------------------------ main
+load_conf
+cmd=${1:-help}
+shift 2>/dev/null
+case "$cmd" in
+    on)      gadget_on "$@" ;;
+    off)     gadget_off ;;
+    status|st) status ;;
+    conn|ip) conn_info ;;
+    ssh)     case "${1:-status}" in
+                 on)   ssh_on ;;
+                 off)  ssh_off ;;
+                 keys) ssh_keys ;;
+                 *)    ssh_status ;;
+             esac ;;
+    eth)     eth_up ;;
+    nat)     case "${1:-on}" in
+                 off)     nat_off ;;
+                 status)  say "NAT: $(cat /run/usbnet-nat.info 2>/dev/null || echo 'не включён (usbnet nat)')"
+                          say "шлюз: $(ip route 2>/dev/null | awk '/^default/{print $3; exit}')"
+                          say "DNS:  $(grep -h nameserver /etc/resolv.conf 2>/dev/null | tr '\n' ' ')" ;;
+                 on|"")   nat_on ;;
+                 *)       nat_on ;;
+             esac ;;
+    host)    load_conf; say "=== USB-хост ==="; host_list; say "блоки:"; ls /sys/block 2>/dev/null | tr '\n' ' '; say "" ;;
+    mount)   mount_usb ;;
+    auto)    auto_set "${1:-status}" ;;
+    test|diag) selftest ;;
+    log)     show_log ;;
+    help|-h|--help|"") usage ;;
+    *)       usage; exit 1 ;;
+esac

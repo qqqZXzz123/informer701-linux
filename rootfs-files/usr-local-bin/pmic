@@ -1,0 +1,33 @@
+#!/bin/sh
+# pmic [N] - проверка стабильности шины I2C0 и ответа AXP209 (адрес 0x34).
+# Читает CHIP ID N раз подряд и считает успехи/отказы.
+# Это главный тест: если FAIL > 0 - контакт/подтяжки PB0(SCK)/PB1(SDA) плохие.
+N=${1:-100}
+BUS=$(i2cbus)
+ADDR=0x34
+ok=0; fail=0; i=1
+echo "Шина I2C с AXP209: /dev/i2c-$BUS"
+echo "Читаю AXP209 (bus $BUS, addr $ADDR, reg 0x03 = CHIP ID) $N раз..."
+while [ $i -le "$N" ]; do
+    v=$(i2cget -f -y $BUS $ADDR 0x03 2>/dev/null)
+    if [ -n "$v" ]; then
+        ok=$((ok + 1))
+        if [ $i -le 5 ] || [ $((i % 25)) -eq 0 ]; then
+            echo "  read #$(printf '%3d' $i): CHIP ID = $v"
+        fi
+    else
+        fail=$((fail + 1))
+        echo "  read #$(printf '%3d' $i): *** ОШИБКА ЧТЕНИЯ (шина не ответила) ***"
+    fi
+    i=$((i + 1))
+done
+echo
+echo "ИТОГ: OK=$ok  FAIL=$fail  (из $N)"
+if [ "$fail" -eq 0 ]; then
+    echo "Шина I2C0 и AXP209 работают стабильно."
+else
+    echo "ШИНА НЕСТАБИЛЬНА: проверьте пайку PB0/PB1, подтяжки к 3V3, питание PMIC."
+fi
+echo
+echo "Сканирование всей шины:"
+i2cdetect -y $BUS 2>&1 | head -12

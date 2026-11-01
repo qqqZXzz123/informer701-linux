@@ -1,0 +1,272 @@
+#!/bin/sh
+# accel - акселерометр Freescale MMA7660FC на Informer 701
+#
+# Железо (лист P16 схемы "WIFI-GSENSOR"): U48 = MMA7660FC (SOP10),
+#   шина TWI1 = /dev/i2c-1 (SCL = PB18, SDA = PB19), 7-битный адрес 0x4c,
+#   питание DVDD/AVDD от некоммутируемой рельсы VCC-3V3 (чип жив всегда),
+#   INT1 = PH0 (GS-INT1), INT2 = PI10 (GS-INT2) - драйвер работает опросом,
+#   прерывания не используются. Внешних подтяжек шины по схеме нет
+#   (R112/R150/R152 = NC), поэтому в DTS включены внутренние (bias-pull-up).
+#
+# Ядро: CONFIG_IIO=y + CONFIG_MMA7660=y (драйвер drivers/iio/accel/mma7660.c).
+# В DTS узел &i2c1 { accelerometer@4c { compatible = "fsl,mma7660"; reg = <0x4c>; }; }.
+#
+# Регистры: XOUT=0x00, YOUT=0x01, ZOUT=0x02, MODE=0x07 (bit0 = active).
+# Значение 6-битное со знаком, bit6 = "alert" (данные обновлялись во время
+# чтения - надо перечитать). Масштаб: (1.5+1.5)*9.81/63 = 0.467142857 м/с²
+# на единицу счёта (его же ядро отдаёт в in_accel_scale).
+#
+# Команды: accel help
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+IIO_BUS=/sys/bus/iio/devices
+CHIP=mma7660
+I2C_BUS=1                 # TWI1
+I2C_ADDR=0x4c
+SCALE_DEFAULT=0.467142857
+
+say()  { printf '%s\n' "$*"; }
+ok()   { printf '[accel] %s\n' "$*"; }
+warn() { printf '[accel] ВНИМАНИЕ: %s\n' "$*" >&2; }
+die()  { printf '[accel] ОШИБКА: %s\n' "$*" >&2; exit 1; }
+
+iio_dev() {
+    # путь к каталогу устройства IIO с именем mma7660
+    for d in "$IIO_BUS"/iio:device*; do
+        [ -e "$d/name" ] || continue
+        n=$(cat "$d/name" 2>/dev/null)
+        case "$n" in
+            *$CHIP*) echo "$d"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# 6-битное знаковое значение из сырого байта регистра
+sign6() {
+    v=$(( $1 & 0x3f ))
+    [ $(( v & 0x20 )) -ne 0 ] && v=$(( v - 64 ))
+    echo "$v"
+}
+
+read_iio() {
+    d=$1
+    rx=$(cat "$d/in_accel_x_raw" 2>/dev/null)
+    ry=$(cat "$d/in_accel_y_raw" 2>/dev/null)
+    rz=$(cat "$d/in_accel_z_raw" 2>/dev/null)
+    sc=$(cat "$d/in_accel_scale" 2>/dev/null)
+    [ -n "$rx" ] || return 1
+    echo "$rx $ry $rz ${sc:-$SCALE_DEFAULT}"
+    return 0
+}
+
+read_i2c() {
+    # запасной путь: читаем регистры напрямую через /dev/i2c-1
+    command -v i2cget >/dev/null 2>&1 || return 1
+    [ -e /dev/i2c-$I2C_BUS ] || return 1
+    # MODE: включить active (bit0), не трогая TON (bit2)
+    m=$(i2cget -y -f $I2C_BUS $I2C_ADDR 0x07 2>/dev/null) || return 1
+    mv=$(( m & 0xff ))
+    [ $(( mv & 1 )) -eq 0 ] && i2cset -y -f $I2C_BUS $I2C_ADDR 0x07 $(( (mv & ~0x04) | 0x01 )) >/dev/null 2>&1
+    i=0
+    while [ $i -lt 5 ]; do
+        x=$(i2cget -y -f $I2C_BUS $I2C_ADDR 0x00 2>/dev/null) || return 1
+        [ $(( x & 0x40 )) -eq 0 ] && break
+        i=$((i+1))
+    done
+    y=$(i2cget -y -f $I2C_BUS $I2C_ADDR 0x01 2>/dev/null)
+    z=$(i2cget -y -f $I2C_BUS $I2C_ADDR 0x02 2>/dev/null)
+    echo "$(sign6 $x) $(sign6 $y) $(sign6 $z) $SCALE_DEFAULT"
+}
+
+get_vals() {
+    d=$(iio_dev 2>/dev/null)
+    if [ -n "$d" ]; then
+        v=$(read_iio "$d") && { echo "$v"; return 0; }
+    fi
+    v=$(read_i2c) && { echo "$v"; return 0; }
+    return 1
+}
+
+fmt() {
+    # $1 $2 $3 = raw x y z, $4 = scale -> печать м/с² и g
+    awk -v x="$1" -v y="$2" -v z="$3" -v s="${4:-$SCALE_DEFAULT}" 'BEGIN {
+        if (s == "") s = 0.467142857;
+        ax = x*s; ay = y*s; az = z*s;
+        m = sqrt(ax*ax + ay*ay + az*az);
+        printf "  X = %+6d  = %+7.3f м/с²  = %+6.3f g\n", x, ax, ax/9.80665;
+        printf "  Y = %+6d  = %+7.3f м/с²  = %+6.3f g\n", y, ay, ay/9.80665;
+        printf "  Z = %+6d  = %+7.3f м/с²  = %+6.3f g\n", z, az, az/9.80665;
+        printf "  |a| = %.3f м/с² (%.3f g)   масштаб %s м/с² на счёт\n", m, m/9.80665, s;
+    }'
+}
+
+orient() {
+    # по доминирующей оси - чем вверх лежит планшет
+    awk -v x="$1" -v y="$2" -v z="$3" 'BEGIN {
+        ax = (x<0?-x:x); ay = (y<0?-y:y); az = (z<0?-z:z);
+        if (az >= ax && az >= ay) { print (z > 0 ? "экраном вверх (лицевая сторона)" : "экраном вниз (на спинке)"); }
+        else if (ax >= ay)        { print (x > 0 ? "на левом боку (порт USB слева)" : "на правом боку"); }
+        else                      { print (y > 0 ? "вертикально, верхом вверх" : "вертикально, вверх ногами"); }
+    }'
+}
+
+bar() {
+    # полоса-индикатор от -32..+32
+    awk -v v="$1" 'BEGIN {
+        n = int(v); if (n > 32) n = 32; if (n < -32) n = -32;
+        s = ""; for (i = -32; i <= 32; i++) { s = s ((i == n) ? "#" : ((i == 0) ? "|" : ".")); }
+        printf "  %+3d %s\n", v, s;
+    }'
+}
+
+cmd_read() {
+    # ВАЖНО: не "set -- $(get_vals) || die" - set всегда завершается успешно,
+    # и при мёртвом чипе напечатались бы нули вместо ошибки.
+    v=$(get_vals) || die "не удалось прочитать акселерометр (диагностика: accel info)"
+    set -- $v
+    [ $# -ge 4 ] || die "чтение вернуло мусор: '$v'"
+    say "=== MMA7660 (шина i2c-$I2C_BUS, адрес $I2C_ADDR) ==="
+    fmt "$@"
+    say "  ориентация: $(orient "$1" "$2" "$3")"
+    if [ "$1" = 0 ] && [ "$2" = 0 ] && [ "$3" = 0 ]; then
+        warn "все три оси по нулям: чип не в активном режиме или не отвечает"
+        say  "     диагностика: accel info (ищем 0x4c на шине i2c-$I2C_BUS)"
+    fi
+}
+
+cmd_watch() {
+    iv=${1:-1}
+    say "наблюдение за акселерометром (интервал ${iv} с; Ctrl-C - выход)"
+    while :; do
+        if v=$(get_vals); then
+            set -- $v
+            printf '\r X=%-4s Y=%-4s Z=%-4s  |a|=%s   %-38s' "$1" "$2" "$3" \
+                "$(awk -v x="$1" -v y="$2" -v z="$3" -v s="$4" 'BEGIN{printf "%.2f", sqrt((x*s)^2+(y*s)^2+(z*s)^2)}')" \
+                "$(orient "$1" "$2" "$3")"
+        else
+            printf '\r чтение не удалось            '
+        fi
+        sleep "$iv"
+    done
+}
+
+cmd_level() {
+    say "=== уровень/ориентация (X Y Z в единицах счёта) ==="
+    v=$(get_vals) || die "чтение не удалось (accel info)"
+    set -- $v
+    say "  X:"; bar "$1"
+    say "  Y:"; bar "$2"
+    say "  Z:"; bar "$3"
+    say "  ориентация: $(orient "$1" "$2" "$3")"
+    say "  покой: |a| должен быть близок к 1 g = 21 счёт"
+}
+
+cmd_raw() {
+    v=$(get_vals) || die "чтение не удалось"
+    set -- $v
+    say "raw: x=$1 y=$2 z=$3 scale=$4"
+}
+
+cmd_dump() {
+    d=$(iio_dev) || { warn "устройства IIO с именем $CHIP нет (accel info)"; return 1; }
+    say "=== $d ==="
+    for f in "$d"/*; do
+        [ -f "$f" ] || continue
+        printf '  %-34s %s\n' "$(basename "$f")" "$(cat "$f" 2>/dev/null | head -1)"
+    done
+    say ""
+    say "=== связь с шиной ==="
+    p=$(readlink -f "$d/of_node" 2>/dev/null)
+    [ -n "$p" ] && say "  узел DT: $p"
+    say "  драйвер: $(readlink -f "$d/../device/driver" 2>/dev/null | xargs -r basename 2>/dev/null)"
+}
+
+cmd_info() {
+    say "=== диагностика акселерометра ==="
+    say "  чип: Freescale MMA7660FC (U48), i2c-$I2C_BUS, адрес $I2C_ADDR"
+    say "  узел DT: &i2c1 { accelerometer@4c { compatible = \"fsl,mma7660\" } }"
+    say ""
+    say "  --- шины i2c ---"
+    ls /dev/i2c-* 2>/dev/null | sed 's/^/    /' || say "    /dev/i2c-* НЕТ (в DTS шины выключены?)"
+    for a in /sys/class/i2c-adapter/i2c-*; do
+        [ -e "$a/name" ] || continue
+        say "    $(basename "$a"): $(cat "$a/name")"
+    done
+    say ""
+    say "  --- что видно на шине $I2C_BUS (ищем 0x4c) ---"
+    if command -v i2cdetect >/dev/null 2>&1 && [ -e /dev/i2c-$I2C_BUS ]; then
+        SCAN=$(i2cdetect -y $I2C_BUS 2>/dev/null)
+        printf '%s\n' "$SCAN" | sed 's/^/    /'
+        if printf '%s\n' "$SCAN" | grep -q ' 4c'; then
+            say "    0x4c ОТВЕЧАЕТ - чип жив"
+        else
+            say "    0x4c НЕ отвечает: чип не запаян/не запитан, или шина не та (i2c-1?)"
+        fi
+    else
+        say "    нет i2cdetect или /dev/i2c-$I2C_BUS"
+    fi
+    say ""
+    say "  --- IIO ---"
+    if [ -d "$IIO_BUS" ]; then
+        for d in "$IIO_BUS"/iio:device*; do
+            [ -e "$d" ] || continue
+            say "    $(basename "$d"): name=$(cat "$d/name" 2>/dev/null)"
+        done
+        [ -z "$(ls -A "$IIO_BUS" 2>/dev/null)" ] && say "    устройств IIO нет"
+    else
+        say "    $IIO_BUS отсутствует (CONFIG_IIO выключен?)"
+    fi
+    d=$(iio_dev 2>/dev/null)
+    if [ -n "$d" ]; then
+        ok "драйвер $CHIP привязан: $d"
+    else
+        warn "драйвер $CHIP не привязан ни к чему."
+        say "    причины: нет узла в DTB (старый DTB), чип не отвечает по i2c,"
+        say "    или шина i2c-$I2C_BUS не поднялась. Проверьте dmesg:"
+        dmesg 2>/dev/null | grep -iE 'i2c|mv64xxx|mma7660|iio' | tail -10 | sed 's/^/      /'
+    fi
+    say ""
+    say "  --- драйвер i2c (mv64xxx) и DTS ---"
+    dmesg 2>/dev/null | grep -iE 'mv64xxx|i2c-1|i2c-2' | tail -6 | sed 's/^/    /'
+    say ""
+    say "  --- прямой доступ к регистрам (без IIO) ---"
+    if v=$(read_i2c); then
+        set -- $v
+        say "    XOUT/YOUT/ZOUT = $1 / $2 / $3 (масштаб $4 м/с² на счёт)"
+    else
+        say "    чтение по i2c не удалось"
+    fi
+}
+
+usage() {
+    cat <<EOF
+accel - акселерометр MMA7660FC (шина TWI1 = /dev/i2c-1, адрес 0x4c)
+
+  accel            прочитать ускорения (то же, что accel read)
+  accel read       X/Y/Z в единицах счёта, м/с² и g + ориентация
+  accel watch [с]  непрерывное обновление (по умолчанию раз в 1 с)
+  accel level      наглядные шкалы X/Y/Z и чем вверх лежит планшет
+  accel raw        только сырые значения (для скриптов)
+  accel dump       все атрибуты sysfs устройства IIO
+  accel info       диагностика: шины i2c, адрес 0x4c, IIO, dmesg, регистры
+
+Если accel info показывает, что 0x4c не отвечает, - чип не запаян или не
+запитан (по схеме питание от VCC-3V3, оно не коммутируется).
+EOF
+}
+
+cmd=${1:-read}
+shift 2>/dev/null
+case "$cmd" in
+    read|"")   cmd_read ;;
+    watch)     cmd_watch "$@" ;;
+    level)     cmd_level ;;
+    raw)       cmd_raw ;;
+    dump)      cmd_dump ;;
+    info|diag) cmd_info ;;
+    help|-h|--help) usage ;;
+    *)         usage; exit 1 ;;
+esac

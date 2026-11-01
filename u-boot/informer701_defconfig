@@ -1,0 +1,40 @@
+CONFIG_ARM=y
+CONFIG_ARCH_SUNXI=y
+CONFIG_DEFAULT_DEVICE_TREE="sun4i-a10-informer-701"
+CONFIG_SPL=y
+CONFIG_MACH_SUN4I=y
+# DRAM: 4x 1Gbit x8 DDR3 (H5TQ1G83BFR / K4B1G0846E) = 512 MiB, 32 bit bus.
+# 360 MHz is the sun4i default and the safe starting point;
+# raise to 384/408/432 only after a memtester run.
+CONFIG_DRAM_CLK=360
+CONFIG_DRAM_ZQ=123
+CONFIG_DRAM_EMR1=0
+# CPU clock.  MUST be one of the frequencies in the PLL1 table of
+# arch/arm/mach-sunxi/clock_sun4i.c:
+#   1488 1440 1392 1344 1296 1248 1200 1152 1104 1056 1008 960 912 768 [384]
+# Anything else (e.g. the old 720000000) falls through to the catchall entry
+# and the SPL silently runs the CPU at 384 MHz, which is not in the kernel OPP
+# table either -> cpufreq-dt prints "unlisted initial frequency" and tries to
+# reprogram pll-core live.  1008 MHz is the upstream MACH_SUN4I default and
+# matches the sun4i-a10 OPP entry 1008 MHz @ 1.4 V, which is exactly what
+# CONFIG_AXP_DCDC2_VOLT below programs into VDD-CPU.
+CONFIG_SYS_CLK_FREQ=1008000000
+# AXP209 rails (schematic cover sheet): DCDC2=VDD-CPU, DCDC3=VDD-INT,
+# ALDO3=CSI0-IO 2.8V, ALDO4=CSI1-IO 3.3V
+CONFIG_SPL_I2C=y
+CONFIG_SYS_I2C_MVTWSI=y
+CONFIG_SYS_I2C_SLAVE=0x7f
+CONFIG_SYS_I2C_SPEED=400000
+CONFIG_AXP209_POWER=y
+CONFIG_AXP_DCDC2_VOLT=1400
+CONFIG_AXP_DCDC3_VOLT=1250
+CONFIG_AXP_ALDO3_VOLT=2800
+CONFIG_AXP_ALDO4_VOLT=3300
+# headless: never probe the LCD/HDMI encoder
+# CONFIG_VIDEO_SUNXI is not set
+# handy in the U-Boot shell
+CONFIG_CMD_GPIO=y
+CONFIG_CMD_I2C=y
+# USB host (optional, for usbkbd / usb storage while debugging)
+CONFIG_USB_EHCI_HCD=y
+CONFIG_USB_OHCI_HCD=y

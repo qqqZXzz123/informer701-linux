@@ -1,0 +1,78 @@
+#!/bin/sh
+# clk - реальная частота CPU по регистрам CCU Allwinner A10 (читается через devmem2)
+CCU=0x01c20000
+rd32() { devmem2 "$1" 2>/dev/null | awk '/^Read at address/ {print $NF}'; }
+
+PLL1=$(rd32 $CCU)
+CFG=$(rd32 0x01c20054)
+
+if [ -r /sys/kernel/debug/clk/clk_summary ]; then
+    echo "=== clk_summary (debugfs): CPU, шины, нужные PLL ==="
+    head -1 /sys/kernel/debug/clk/clk_summary
+    # только точные имена: иначе список забивают дети apb1-* (uart1..7, ps2, can)
+    # и до pll-core/cpu/axi/ahb дело не доходит
+    grep -E '(^|[[:space:]])(osc24M|osc32k|pll-core|cpu|axi|ahb|apb0|apb1|mbus|pll-periph|pll-periph-sata|pll-periph-base|pll-video0|pll-ddr|mmc0|mmc1)[[:space:]]' \
+        /sys/kernel/debug/clk/clk_summary | head -20
+    echo "  (весь список: cat /sys/kernel/debug/clk/clk_summary)"
+    echo
+fi
+
+echo "=== CCU (0x01c20000) ==="
+printf '  PLL1_CPU_CTRL (0x00) = %s\n' "$PLL1"
+printf '  CPU_AXI_AHB_APB0_CFG (0x54) = %s\n' "$CFG"
+
+if [ -z "$PLL1" ] || [ -z "$CFG" ]; then
+    echo "  devmem2 не смог прочитать регистры (нужен CONFIG_DEVMEM и права root)"
+    exit 1
+fi
+
+en=$(( (PLL1 >> 31) & 1 ))
+p=$(( (PLL1 >> 16) & 3 ))
+n=$(( (PLL1 >> 8) & 31 ))
+k=$(( (PLL1 >> 4) & 3 ))
+m=$(( PLL1 & 3 ))
+
+# Fout = 24 MHz * N * (K+1) / ((M+1) * 2^P)
+pll=$(( 24 * n * (k + 1) / ( (m + 1) * (1 << p) ) ))
+echo
+echo "  PLL1: enable=$en  N=$n  K=$k  M=$m  P=$p"
+echo "  PLL1 = 24 * $n * $((k+1)) / ($((m+1)) * $((1<<p))) = ${pll} MHz"
+
+src=$(( (CFG >> 16) & 3 ))
+axi=$(( (CFG & 3) + 1 ))
+ahb=$(( ((CFG >> 4) & 3) + 1 ))
+apb0=$(( ((CFG >> 8) & 3) + 1 ))
+case $src in
+    0) sname="LOSC 32k"; cpu=0 ;;
+    1) sname="OSC24M";   cpu=24 ;;
+    2) sname="PLL1";     cpu=$pll ;;
+    3) sname="PLL6/Periph"; cpu=$pll ;;
+esac
+echo
+echo "  источник CPU clk = $src ($sname)"
+echo "  CPU = ${cpu} MHz,  AXI = $(( cpu / axi )) MHz (div $axi),"
+echo "        AHB = $(( cpu / axi / ahb )) MHz (div $ahb),"
+echo "        APB0 = $(( cpu / axi / ahb / apb0 )) MHz (div $apb0)"
+echo
+echo "=== что говорит ядро ==="
+CF=/sys/devices/system/cpu/cpu0/cpufreq
+if [ -d "$CF" ]; then
+    echo "  scaling_cur_freq = $(cat $CF/scaling_cur_freq 2>/dev/null) kHz"
+    echo "  governor         = $(cat $CF/scaling_governor 2>/dev/null)"
+else
+    echo "  cpufreq sysfs нет -> ядро частотой не управляет, остаётся то, что выставил SPL"
+fi
+echo "  (SPL печатает свою частоту в строке 'CPU: ...Hz, AXI/AHB/APB: ...')"
+echo
+echo "=== остальные PLL ==="
+printf '  PLL5 DDR   (0x20) = %s\n' "$(rd32 0x01c20020)"
+printf '  PLL6 Periph(0x28) = %s\n' "$(rd32 0x01c20028)"
+printf '  OSC24M cfg (0x50) = %s\n' "$(rd32 0x01c20050)"
+printf '  APB1 div   (0x58) = %s\n' "$(rd32 0x01c20058)"
+printf '  AXI gate   (0x5c) = %s\n' "$(rd32 0x01c2005c)"
+printf '  AHB gate0  (0x60) = %s\n' "$(rd32 0x01c20060)"
+printf '  AHB gate1  (0x64) = %s\n' "$(rd32 0x01c20064)"
+printf '  APB0 gate  (0x68) = %s\n' "$(rd32 0x01c20068)"
+printf '  APB1 gate  (0x6c) = %s\n' "$(rd32 0x01c2006c)"
+printf '  SD0 clk    (0x88) = %s\n' "$(rd32 0x01c20088)"
+printf '  DRAM gate  (0x100)= %s\n' "$(rd32 0x01c20100)"

@@ -1,0 +1,1040 @@
+#!/bin/sh
+# wifi - USB-WiFi на Informer 701 (N708H6, Allwinner A10)
+#
+# Адаптер втыкается в разъём, впаянный на место WiFi-модуля: это хост-порт
+# USB2 (DP2/DM2), питание VBUS включает PH3 (USB2-DRV -> R163 -> ключ).
+#
+# Что нужно, чтобы это работало (всё уже в образе b021+):
+#   * ядро с CONFIG_MODULES: cfg80211/mac80211 и ~17 драйверов USB-WiFi
+#     (rtl8xxxu, rtl8192cu, r8712u, rt2800usb, rt73usb, mt7601u, mt76x0u,
+#      mt76x2u, ath9k_htc, ath6kl_usb, carl9170, zd1211rw, at76c50x_usb,
+#      p54usb, mwifiex_usb, rsi_usb, brcmfmac, rndis_wlan, vt6656);
+#   * /sbin/hotplug + настоящий modprobe (kmod) - драйвер грузится сам по
+#     MODALIAS, как только адаптер воткнут;
+#   * прошивки в /lib/firmware (выборка из linux-firmware, 68 файлов);
+#   * wpa_supplicant, iw, hostapd, dnsmasq, wireless-regdb (regulatory.db).
+#
+# Команды: wifi help
+#
+# Настройки хранятся в /etc/wpa_supplicant/wpa_supplicant.conf (сети),
+# /etc/wifi-reg (страна), /etc/wifi-static (статический адрес),
+# флаг автоподключения - /etc/wifi-enabled.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+CONF_DIR=/etc/wpa_supplicant
+CONF=$CONF_DIR/wpa_supplicant.conf
+HOSTAPD_CONF=/etc/hostapd.conf
+DNSMASQ_CONF=/etc/dnsmasq-wifi.conf
+REG_FILE=/etc/wifi-reg
+AUTO_FLAG=/etc/wifi-enabled
+LOG=/var/log/wifi.log
+RUN=/run/wifi
+# КАТАЛОГ УПРАВЛЯЮЩИХ СОКЕТОВ. В бинарник wpa_cli путь /var/run/wpa_supplicant
+# вшит как значение по умолчанию, поэтому ctrl_interface в конфиге обязан быть
+# таким же: в b022 там был /run/wifi/wpa, wpa_cli не находил сокет, состояние
+# подключения не определялось и DHCP не запускался вовсе (адрес не выдавался,
+# хотя точка была ассоциирована и ключи подобраны).
+CTRL_DIR=/var/run/wpa_supplicant
+STATIC_FILE=/etc/wifi-static
+# Ограничение мощности передатчика: плата питается от USB ПК (<=0.9 А), а
+# передатчик RTL8188FU в импульсе даёт сотни мА. На слабом источнике 5 В
+# проседают и плата виснет/молча перезагружается. `wifi tx 5` снижает
+# мощность до 5 дБм, значение сохраняется в /etc/wifi-txpower и применяется
+# при каждом подключении. Просадку можно измерить: pmic-vbus watch
+TX_FILE=/etc/wifi-txpower
+AP_NET=192.168.71
+AP_IP=$AP_NET.1
+SHARE_CONF=/etc/udhcpd-usb0.conf
+
+say()  { printf '%s\n' "$*"; }
+ok()   { printf '[wifi] %s\n' "$*"; }
+warn() { printf '[wifi] ВНИМАНИЕ: %s\n' "$*" >&2; }
+die()  { printf '[wifi] ОШИБКА: %s\n' "$*" >&2; exit 1; }
+need_root() { [ "$(id -u)" -eq 0 ] || die "нужны права root"; }
+
+# ---------------------------------------------------------------- базовое
+load_stack() {
+    # cfg80211/mac80211 - модули; без них iw/wpa_supplicant не найдут nl80211
+    modprobe -q cfg80211 2>/dev/null
+    modprobe -q mac80211 2>/dev/null
+    modprobe -q rfkill   2>/dev/null
+    [ -f /lib/firmware/regulatory.db ] || warn "нет /lib/firmware/regulatory.db (пакет wireless-regdb) - iw reg set не сработает"
+}
+
+wl_list() {
+    # имена беспроводных интерфейсов (wlan0, wlan1, ...)
+    for i in /sys/class/net/*; do
+        [ -e "$i" ] || continue
+        n=$(basename "$i")
+        if [ -d "$i/wireless" ] || [ -e "$i/phy80211" ]; then say "$n"; fi
+    done
+}
+
+wl_count() { wl_list | wc -l | tr -d ' '; }
+
+wl_pick() {
+    # $1 - явно заданный интерфейс (может быть пустым)
+    if [ -n "$1" ]; then
+        [ -e "/sys/class/net/$1" ] || die "интерфейса $1 нет (wifi dev)"
+        echo "$1"; return 0
+    fi
+    n=$(wl_list | head -1)
+    [ -n "$n" ] || return 1
+    echo "$n"
+}
+
+require_wl() {
+    load_stack
+    if ! n=$(wl_pick "$1"); then n=""; fi
+    # Адаптер может ЕЩЁ перечисляться на USB: VBUS разъёма включает пин PH3, и
+    # сразу после входа интерфейс порой появляется лишь через несколько секунд
+    # (видно в логе платы b026: первый 'wifi connect' через пару секунд после
+    # login говорил "интерфейс не найден", повторный через 5 с - работал).
+    # Подождать дешевле, чем пугать человека отсутствием адаптера.
+    if [ -z "$n" ]; then
+        w=${WIFI_WAIT:-12}
+        case "$w" in ''|*[!0-9]*) w=12 ;; esac
+        i=0
+        while [ "$i" -lt "$w" ]; do
+            i=$((i+1))
+            # ВАЖНО: всё человеческое - в stderr: require_wl вызывают как
+            # ifc=$(require_wl ...), и stdout уходит в ПЕРЕМЕННУЮ, а не на экран
+            [ "$i" -eq 1 ] && say "[wifi] интерфейса пока нет - жду до ${w} с, пока адаптер перечислится на USB (WIFI_WAIT=0 - не ждать)..." >&2
+            sleep 1
+            if ! n=$(wl_pick "$1"); then n=""; fi
+            [ -n "$n" ] && { ok "беспроводной интерфейс появился через ${i} с ожидания" >&2; break; }
+        done
+    fi
+    if [ -z "$n" ]; then
+        warn "беспроводной интерфейс не найден (ожидание перечисления USB: ${WIFI_WAIT:-12} с)."
+        say "  1) адаптер воткнут в разъём на месте WiFi-модуля?  usbnet host" >&2
+        say "  2) драйвер загрузился?                         lsmod; dmesg | tail -30" >&2
+        say "  3) чего не хватает:                            wifi dev;  wifi fw" >&2
+        return 1
+    fi
+    echo "$n"
+}
+
+drv_of() {
+    d=$(readlink -f "/sys/class/net/$1/device/driver" 2>/dev/null)
+    [ -n "$d" ] && basename "$d" || echo "?"
+}
+
+usb_id_of() {
+    p=$(readlink -f "/sys/class/net/$1/device" 2>/dev/null)
+    # device -> .../usbN/N-x/N-x:1.0 ; поднимаемся до устройства с idVendor
+    while [ -n "$p" ] && [ "$p" != "/" ]; do
+        if [ -f "$p/idVendor" ] && [ -f "$p/idProduct" ]; then
+            echo "$(cat "$p/idVendor"):$(cat "$p/idProduct")"
+            return 0
+        fi
+        p=$(dirname "$p")
+    done
+    echo "?"
+}
+
+apply_reg() {
+    cc=""
+    [ -f "$REG_FILE" ] && cc=$(head -1 "$REG_FILE" | tr -dc 'A-Za-z')
+    [ -n "$cc" ] || return 0
+    iw reg set "$cc" >/dev/null 2>&1
+    # страна и в конфиг wpa_supplicant (иначе 5 ГГц/каналы 12-13 могут быть закрыты)
+    if [ -f "$CONF" ] && ! grep -q "^country=" "$CONF"; then
+        sed -i "1i country=$cc" "$CONF" 2>/dev/null
+    fi
+}
+
+ensure_conf() {
+    mkdir -p "$CONF_DIR" "$RUN" "$CTRL_DIR" /var/log
+    if [ ! -f "$CONF" ]; then
+        cat > "$CONF" <<EOF
+# создан утилитой wifi. Сети добавляет 'wifi connect <SSID> <пароль>'.
+ctrl_interface=$CTRL_DIR
+ctrl_interface_group=0
+update_config=1
+ap_scan=1
+EOF
+        chmod 600 "$CONF"
+    else
+        # конфиг от старых образов: ctrl_interface=/run/wifi/wpa -> стандартный путь
+        grep -q "^ctrl_interface=$CTRL_DIR$" "$CONF" || \
+            sed -i "s|^ctrl_interface=.*|ctrl_interface=$CTRL_DIR|" "$CONF"
+        grep -q '^ctrl_interface=' "$CONF" || sed -i "1i ctrl_interface=$CTRL_DIR" "$CONF"
+    fi
+}
+
+# ------------------------------------------------------------- wpa_cli/состояние
+# ВСЕ обращения к wpa_cli идут только через wcli: без -p "$CTRL_DIR" он ищет
+# сокет в /var/run/wpa_supplicant и молча не работает.
+wcli() {
+    _wifc=$1; shift
+    wpa_cli -p "$CTRL_DIR" -i "$_wifc" "$@" 2>/dev/null
+}
+wpa_state() { wcli "$1" status | awk -F= '/^wpa_state=/{print $2; exit}'; }
+wpa_ssid()  { wcli "$1" status | awk -F= '/^ssid=/{print $2; exit}'; }
+
+# Ассоциация установлена? Проверяем тремя независимыми способами: по wpa_cli,
+# по логу wpa_supplicant и по 'iw link'. Достаточно любого - иначе один
+# неработающий источник (как wpa_cli в b022) оставляет сеть без адреса.
+assoc_ok() {
+    _aifc=$1
+    [ "$(wpa_state "$_aifc")" = COMPLETED ] && return 0
+    grep -q 'CTRL-EVENT-CONNECTED' "$LOG" 2>/dev/null && return 0
+    grep -q 'WPA: Key negotiation completed' "$LOG" 2>/dev/null && return 0
+    iw dev "$_aifc" link 2>/dev/null | grep -q 'Connected to' && return 0
+    return 1
+}
+
+# ---------------------------------------------------------------- wifi dev
+cmd_dev() {
+    load_stack
+    say "=== USB-устройства (адаптер ищется здесь) ==="
+    if command -v lsusb >/dev/null 2>&1; then
+        lsusb 2>/dev/null | sed 's/^/  /'
+    else
+        for d in /sys/bus/usb/devices/*; do
+            [ -e "$d/idVendor" ] || continue
+            say "  $(basename "$d")  $(cat "$d/idVendor"):$(cat "$d/idProduct")  $(cat "$d/product" 2>/dev/null) $(cat "$d/manufacturer" 2>/dev/null | sed 's/^/(/; s/$/)/')"
+        done
+    fi
+    say ""
+    say "=== беспроводные интерфейсы ==="
+    n=0
+    for i in $(wl_list); do
+        n=$((n+1))
+        say "  $i: драйвер $(drv_of "$i"), USB $(usb_id_of "$i")"
+        s=$(iw dev "$i" info 2>/dev/null | awk '/type/{print $2; exit}')
+        m=$(cat "/sys/class/net/$i/address" 2>/dev/null)
+        op=$(cat "/sys/class/net/$i/operstate" 2>/dev/null)
+        say "       тип ${s:-?}, MAC ${m:-?}, состояние ${op:-?}"
+        ip -4 -o addr show dev "$i" 2>/dev/null | awk '{print "       адрес " $4}'
+        [ -f "$RUN/wpa.$i.pid" ] && kill -0 "$(cat "$RUN/wpa.$i.pid")" 2>/dev/null \
+            && say "       wpa_supplicant: запущен (pid $(cat "$RUN/wpa.$i.pid"))"
+    done
+    [ "$n" = 0 ] && { say "  (нет) - драйвер адаптера не загрузился или адаптер не воткнут"; }
+    say ""
+    say "=== загруженные беспроводные модули ==="
+    lsmod 2>/dev/null | awk 'NR==1 || /cfg80211|mac80211|rt2|rtl|r8712|mt76|ath|carl9170|zd1211|p54|mwifiex|rsi|brcm|vnt|at76|rfkill|libarc4/' | sed 's/^/  /'
+    say ""
+    say "=== прошивки: чего ядру не хватило ==="
+    miss=$(dmesg 2>/dev/null | grep -iE 'direct firmware load|failed to load firmware|firmware: failed|could not load firmware|no firmware' | tail -8)
+    if [ -n "$miss" ]; then echo "$miss" | sed 's/^/  /'; say "  -> нужный файл можно положить в /lib/firmware (см. 'wifi fw')"; else
+        say "  жалоб на отсутствие прошивок в dmesg нет"; fi
+    say ""
+    say "=== последние строки dmesg про USB/WiFi ==="
+    dmesg 2>/dev/null | grep -iE 'usb [0-9]-|new high-speed|new full-speed|wlan|cfg80211|mac80211|firmware' | tail -12 | sed 's/^/  /'
+}
+
+# ---------------------------------------------------------------- wifi scan
+cmd_scan() {
+    ifc=$(require_wl "$1") || return 1
+    say "сканирую на $ifc (это занимает 3-10 с, адаптер не должен быть подключён)..."
+    ip link set "$ifc" up 2>/dev/null
+    out=$(iw dev "$ifc" scan 2>&1)
+    case "$out" in
+        *"command failed: Device or resource busy"*|*"busy"*)
+            warn "интерфейс занят (подключён?). Сначала: wifi down"; return 1 ;;
+        *"Interface doesn't exist"*|*"No such device"*)
+            die "нет устройства $ifc" ;;
+        *"command failed"*)
+            say "$out" | head -3 | sed 's/^/  /'
+            warn "скан не удался. Смотрите 'wifi dev' и dmesg."
+            return 1 ;;
+    esac
+    echo "$out" | awk '
+        function flushbss() {
+            if (bssid == "") return
+            sec = "open"
+            if (rsn) sec = "WPA2"
+            else if (wpa) sec = "WPA"
+            else if (privacy) sec = "WEP"
+            if (rsn && wpa) sec = "WPA/WPA2"
+            printf "%6.1f дБм  ch%-3s %-11s %-5s %-32s %s\n", sig, ch, sec, bssid, (ssid == "" ? "<скрытая сеть>" : ssid), extra
+            bssid=""; ssid=""; sig=0; ch=""; wpa=0; rsn=0; privacy=0; extra=""
+        }
+        /^BSS /            { flushbss(); bssid = substr($2, 1, 17) }
+        /^[ \t]*freq:/     { f = $2; if (f > 2400000) f = f/1000; if (f < 2500) ch = (f - 2407)/5; else if (f > 4900 && f < 5900) ch = (f - 5000)/5; else if (f > 59000) ch = (f/1000 - 5000)/5; else ch = f }
+        /^[ \t]*signal:/   { sig = $2 }
+        /^[ \t]*SSID:/     { ssid = substr($0, index($0, ":") + 2) }
+        /^[ \t]*capability:/ { if ($0 ~ /Privacy/) privacy = 1 }
+        /^[ \t]*WPA:/      { wpa = 1 }
+        /^[ \t]*RSN:/      { rsn = 1 }
+        END { flushbss() }
+    ' | sort -rn | head -40
+    say ""
+    say "подключение:  wifi connect '<SSID>' '<пароль>'"
+}
+
+# ---------------------------------------------------------------- wifi connect
+wpa_running() { ifc=$1; [ -f "$RUN/wpa.$ifc.pid" ] && kill -0 "$(cat "$RUN/wpa.$ifc.pid")" 2>/dev/null; }
+
+stop_wpa() {
+    ifc=$1
+    [ -f "$RUN/wpa.$ifc.pid" ] && kill "$(cat "$RUN/wpa.$ifc.pid")" 2>/dev/null
+    rm -f "$RUN/wpa.$ifc.pid"
+    killall wpa_supplicant 2>/dev/null
+}
+
+# ------------------------------------------------------- запуск wpa_supplicant
+# ВАЖНО (b022): wpa_supplicant в Alpine 3.20 собран БЕЗ CONFIG_DEBUG_FILE,
+# поэтому ключа "-f <файл>" у него НЕТ. С ним процесс печатает usage и сразу
+# выходит - именно так в b021 выглядело "wifi connect ничего не делает".
+# Поддержку -f определяем по справке, а если её нет - пишем лог перенаправлением
+# и уводим процесс в свою сессию (setsid), чтобы закрытие SSH/консоли его не убило.
+WPA_F=""
+wpa_supports_f() {
+    [ -n "$WPA_F" ] && return 0
+    case "$(wpa_supplicant -h 2>&1)" in
+        *"  -f ="*) WPA_F=1 ;;
+        *)          WPA_F=0 ;;
+    esac
+}
+
+wpa_find_pid() {   # $1 = интерфейс; pid ищем по /proc (pidof в busybox ненадёжен)
+    for p in /proc/[0-9]*; do
+        c=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null) || continue
+        case "$c" in
+            *wpa_supplicant*" -i $1 "*|*wpa_supplicant*" -i $1") echo "${p#/proc/}"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
+start_wpa() {      # $1 = интерфейс; 0 = запустился
+    ifc=$1
+    mkdir -p "$RUN" /var/log
+    rm -f "$RUN/wpa.$ifc.pid"
+    : > "$LOG" 2>/dev/null
+    wpa_supports_f
+    if [ "$WPA_F" = 1 ]; then
+        wpa_supplicant -B -P "$RUN/wpa.$ifc.pid" -i "$ifc" -c "$CONF" \
+            -D nl80211,wext -f "$LOG" >>"$LOG" 2>&1
+    elif command -v setsid >/dev/null 2>&1; then
+        setsid wpa_supplicant -i "$ifc" -c "$CONF" -D nl80211,wext >>"$LOG" 2>&1 &
+    else
+        wpa_supplicant -i "$ifc" -c "$CONF" -D nl80211,wext >>"$LOG" 2>&1 &
+    fi
+    # pid-файл: с -B его пишет сам wpa_supplicant, без -B - находим по /proc
+    i=0
+    while [ $i -lt 5 ]; do
+        i=$((i+1))
+        [ -s "$RUN/wpa.$ifc.pid" ] && break
+        pid=$(wpa_find_pid "$ifc") && { echo "$pid" > "$RUN/wpa.$ifc.pid"; break; }
+        sleep 1
+    done
+    if ! wpa_running "$ifc"; then
+        warn "wpa_supplicant не запустился. Последние строки $LOG:"
+        tail -12 "$LOG" 2>/dev/null | sed 's/^/    /'
+        return 1
+    fi
+    ok "wpa_supplicant запущен (pid $(cat "$RUN/wpa.$ifc.pid" 2>/dev/null)), лог: $LOG"
+    return 0
+}
+
+diag_no_assoc() {  # почему не подключились - по логу wpa_supplicant
+    ifc=$1
+    tail -15 "$LOG" 2>/dev/null | sed 's/^/    /'
+    if grep -qE '4WAY_HANDSHAKE_TIMEOUT|WRONG_KEY|CTRL-EVENT-DISCONNECTED.*reason=2|pre-shared key may be wrong' "$LOG" 2>/dev/null; then
+        warn "похоже на НЕВЕРНЫЙ ПАРОЛЬ: повторите  wifi connect '<SSID>' '<настоящий пароль>'"
+    elif grep -q 'Trying to associate\|associating' "$LOG" 2>/dev/null && ! grep -q 'Associated' "$LOG" 2>/dev/null; then
+        warn "точка доступа не отвечает на попытку ассоциации: слабый сигнал, занят канал или фильтр по MAC"
+    elif grep -qE 'SSID not found|no suitable AP found' "$LOG" 2>/dev/null; then
+        warn "сеть не видна: проверьте SSID (регистр, пробелы), канал 12-13 (wifi reg RU) и wifi scan"
+    fi
+    say "  полный лог: wifi log 80"
+}
+
+# Шаблон начала блока сети. ВАЖНО: он проверен на обоих grep - и GNU, и busybox
+# 1.36 (Alpine). Настоящий конфиг, который оставляет wpa_passphrase, выглядит
+# как "network={" (со знаком "="), а wpa_supplicant понимает и "network = {".
+#   '^network{'          - НЕ находит "network={"        (пропуск автоподключения)
+#   '^network[ \t]*{'     - НЕ находит: в BRE "\t" внутри скобок это
+#                          ЛИТЕРАЛЬНЫЕ "\" и "t", а не табуляция
+#   '^network[ =]*[{]'   - находит оба варианта (скобки вокруг "{" убирают
+#                          неоднозначность с интервальным квантификатором)
+NETBLK_RE='^network[ =]*[{]'
+
+have_saved_nets() {   # есть ли в $CONF хотя бы одна сохранённая сеть
+    [ -f "$CONF" ] || return 1
+    grep -q -- "$NETBLK_RE" "$CONF" 2>/dev/null
+}
+
+count_saved_nets() {  # сколько сетей сохранено (число, всегда печатается)
+    [ -f "$CONF" ] || { echo 0; return 0; }
+    n=$(grep -c -- "$NETBLK_RE" "$CONF" 2>/dev/null)
+    echo "${n:-0}"
+}
+
+list_saved_nets() { # напечатать сохранённые SSID
+    # awk, а не grep: в grep BRE "\t" - это НЕ табуляция, и в исходнике легко
+    # случайно оставить настоящий таб, который не видно в редакторе
+    [ -f "$CONF" ] || { say "  (конфига $CONF нет)"; return 0; }
+    awk -F'"' '/^[ \t]*ssid[ \t]*=/ { if (NF >= 2 && $2 != "") print "  - " $2; else print "  - " $0 }' "$CONF" 2>/dev/null
+}
+
+net_block_del() {
+    # удалить все блоки network с данным ssid (чтобы конфиг не пух и чтобы
+    # повторный 'wifi connect' с новым паролем не оставлял старый блок)
+    ssid=$1
+    [ -f "$CONF" ] || return 0
+    awk -v want="$ssid" '
+        BEGIN { inblk = 0 }
+        # заголовок блока ОБЯЗАТЕЛЬНО кладём в buf: иначе у сохраняемого блока
+        # теряется строка "network={" и конфиг становится битым
+        /^[ \t]*network[ \t=]*\{/ { inblk = 1; buf = $0 "\n"; ismatch = 0; next }
+        inblk {
+            buf = buf $0 "\n"
+            # строка вида: ssid="имя"   (возможны пробелы и знак "=")
+            if ($0 ~ /^[ \t]*ssid[ \t]*=/) {
+                v = $0
+                sub(/^[ \t]*ssid[ \t]*=[ \t]*"?/, "", v)
+                sub(/"?[ \t]*$/, "", v)
+                if (v == want) ismatch = 1
+            }
+            if ($0 ~ /^[ \t]*\}/) { if (!ismatch) printf "%s", buf; inblk = 0 }
+            next
+        }
+        { print }
+        END { if (inblk) printf "%s", buf }   # незакрытый блок не теряем
+    ' "$CONF" > "$CONF.new" && mv "$CONF.new" "$CONF"
+    chmod 600 "$CONF"
+}
+
+ip4_of() { ip -4 -o addr show dev "$1" 2>/dev/null | awk '{print $4}' | head -1; }
+
+dhcp_up() {
+    ifc=$1
+    killall udhcpc 2>/dev/null
+    ip -4 addr flush dev "$ifc" 2>/dev/null
+    ip link set "$ifc" up 2>/dev/null
+    # udhcpc остаётся в фоне и продлевает аренду; адрес, маршрут и DNS
+    # прописывает /usr/share/udhcpc/default.script.
+    udhcpc -i "$ifc" -b -t 8 -T 2 -A 3 -p "$RUN/udhcpc.$ifc.pid" >/dev/null 2>&1
+    i=0; a=""
+    while [ $i -lt 20 ]; do
+        i=$((i+1))
+        a=$(ip4_of "$ifc"); [ -n "$a" ] && break
+        sleep 1
+    done
+    if [ -z "$a" ]; then
+        # вторая попытка в переднем плане: сразу видно, отвечает ли сервер
+        killall udhcpc 2>/dev/null
+        udhcpc -i "$ifc" -f -q -n -t 4 -T 2 >/dev/null 2>&1
+        a=$(ip4_of "$ifc")
+    fi
+    if [ -n "$a" ]; then
+        g=$(ip route 2>/dev/null | awk '/^default/{print $3; exit}')
+        ok "$ifc получил адрес $a (шлюз ${g:-?}) за ${i} с"
+        say "  DNS: $(grep -h '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{printf "%s ", $2}')"
+        return 0
+    fi
+    warn "DHCP-адрес не получен"
+    if assoc_ok "$ifc"; then
+        say "  ассоциация с точкой есть - значит, не отвечает DHCP-сервер роутера:"
+        say "    повторить запрос:   wifi dhcp"
+        say "    адрес вручную:      wifi static 192.168.1.50/24 192.168.1.1 192.168.1.1"
+        say "    на роутере: не выключен ли DHCP, не фильтр ли по MAC, есть ли свободные адреса"
+    else
+        say "  и ассоциации нет - сначала  wifi connect '<SSID>' '<пароль>'"
+    fi
+    return 1
+}
+
+# статика: 'wifi static <IP/маска> [шлюз] [DNS]' сохраняется в /etc/wifi-static
+# и применяется вместо DHCP (в том числе при загрузке).
+static_get() {   # $1 = интерфейс -> "ip/mask gw dns"
+    [ -f "$STATIC_FILE" ] || return 0
+    awk -v i="$1" '$1==i{print $2, $3, $4; exit}' "$STATIC_FILE"
+}
+
+have_ip() {      # DHCP или сохранённая статика
+    ifc=$1
+    sc=$(static_get "$ifc")
+    if [ -n "$sc" ]; then
+        set -- $sc
+        killall udhcpc 2>/dev/null
+        ip -4 addr flush dev "$ifc" 2>/dev/null
+        ip link set "$ifc" up 2>/dev/null
+        ip addr add "$1" dev "$ifc" 2>/dev/null || { warn "не назначить $1"; return 1; }
+        [ -n "$2" ] && ip route replace default via "$2" dev "$ifc" 2>/dev/null
+        [ -n "$3" ] && printf 'nameserver %s\n' "$3" > /etc/resolv.conf
+        ok "$ifc: статический адрес $1${2:+, шлюз $2}${3:+, DNS $3} (из $STATIC_FILE)"
+        return 0
+    fi
+    dhcp_up "$ifc"
+}
+
+cmd_dhcp() {
+    need_root
+    ifc=$(require_wl "$1") || return 1
+    load_stack
+    assoc_ok "$ifc" || warn "ассоциации с точкой нет - DHCP, скорее всего, не ответит"
+    dhcp_up "$ifc"
+}
+
+cmd_static() {
+    need_root
+    ifc=$(require_wl "$3") || return 1
+    case "${1:-}" in
+        ""|off|help)
+            killall udhcpc 2>/dev/null
+            ip -4 addr flush dev "$ifc" 2>/dev/null
+            ip route del default 2>/dev/null
+            if [ -f "$STATIC_FILE" ]; then
+                awk -v i="$ifc" '$1!=i' "$STATIC_FILE" > "$STATIC_FILE.new" && mv "$STATIC_FILE.new" "$STATIC_FILE"
+                [ -s "$STATIC_FILE" ] || rm -f "$STATIC_FILE"
+            fi
+            ok "$ifc: статический адрес снят (дальше - wifi dhcp)"; return 0 ;;
+    esac
+    ipmask=$1; gw=$2; dns=$3
+    case "$ipmask" in */*) ;; *) ipmask="$ipmask/24" ;; esac
+    printf '%s %s %s %s\n' "$ifc" "$ipmask" "$gw" "$dns" > "$STATIC_FILE"
+    chmod 644 "$STATIC_FILE"
+    have_ip "$ifc" || return 1
+    say "  настройка сохранена в $STATIC_FILE и применяется при каждой загрузке"
+    say "  проверка: ping -c2 ${gw:-8.8.8.8};  отменить: wifi static off"
+}
+
+cmd_connect() {
+    need_root
+    ssid=$1; pass=$2
+    [ -n "$ssid" ] || { say "использование: wifi connect '<SSID>' '<пароль>'"; say "  сеть без пароля:  wifi connect '<SSID>'"; return 1; }
+    ifc=$(require_wl "$3") || return 1
+    ensure_conf; apply_reg
+    ok "подключаю $ifc к '$ssid'"
+    stop_wpa "$ifc"
+    net_block_del "$ssid"
+    if [ -n "$pass" ]; then
+        if command -v wpa_passphrase >/dev/null 2>&1; then
+            wpa_passphrase "$ssid" "$pass" >> "$CONF" 2>/dev/null
+        else
+            cat >> "$CONF" <<EOF
+network={
+	ssid="$ssid"
+	psk="$pass"
+}
+EOF
+        fi
+    else
+        cat >> "$CONF" <<EOF
+network={
+	ssid="$ssid"
+	key_mgmt=NONE
+}
+EOF
+    fi
+    chmod 600 "$CONF"
+    ip link set "$ifc" up 2>/dev/null
+    apply_tx "$ifc"
+    start_wpa "$ifc" || { diag_no_assoc "$ifc"; return 1; }
+    say "  жду ассоциации (до 40 с)..."
+    i=0; state=""
+    while [ $i -lt 40 ]; do
+        i=$((i+1))
+        assoc_ok "$ifc" && break
+        state=$(wpa_state "$ifc")
+        wpa_running "$ifc" || { state="${state:-wpa_supplicant завершился}"; break; }
+        if [ $i -gt 8 ] && grep -qE '4WAY_HANDSHAKE_TIMEOUT|WRONG_KEY|pre-shared key may be wrong' "$LOG" 2>/dev/null; then
+            state="неверный пароль"; break
+        fi
+        sleep 1
+    done
+    if assoc_ok "$ifc"; then
+        state=COMPLETED
+        ssid_now=$(wpa_ssid "$ifc")
+        sig=$(iw dev "$ifc" link 2>/dev/null | awk '/signal:/{print $2, $3; exit}')
+        ok "подключено к '${ssid_now:-$ssid}'${sig:+, сигнал $sig} (за ${i} с)"
+        have_ip "$ifc"
+        gw=$(ip route 2>/dev/null | awk '/^default/{print $3; exit}')
+        if [ -n "$gw" ] && ping -c1 -W3 "$gw" >/dev/null 2>&1; then
+            ok "шлюз $gw отвечает. Можно: pkg update && pkg add <имя>"
+        elif [ -n "$gw" ]; then
+            say "  шлюз $gw не отвечает на ping - возможно, это нормально (ICMP закрыт)"
+        fi
+        say "  сеть сохранена в $CONF; автоподключение при загрузке: wifi auto on"
+        return 0
+    fi
+    say "  состояние: ${state:-не подключено} (через ${i} с)"
+    warn "не подключилось. Диагностика ниже:"
+    diag_no_assoc "$ifc"
+    say "  ещё: wifi scan | wifi dev | wifi fw"
+    return 1
+}
+
+# ------------------------------------------------------- мощность передатчика
+tx_now() {   # текущая мощность из 'iw dev <if> info'
+    iw dev "$1" info 2>/dev/null | awk '/txpower/{print $(NF-1); exit}'
+}
+
+apply_tx() {   # применить сохранённое ограничение (вызывается после ip link up)
+    ifc=$1
+    [ -f "$TX_FILE" ] || return 0
+    v=$(head -1 "$TX_FILE" 2>/dev/null | tr -dc '0-9')
+    [ -n "$v" ] || return 0
+    if iw dev "$ifc" set txpower fixed $(( v * 100 )) 2>/dev/null; then
+        say "  мощность передатчика: ${v} дБм (ограничение из $TX_FILE)"
+    fi
+}
+
+cmd_tx() {
+    need_root
+    ifc=$(require_wl "$2") || return 1
+    case "${1:-status}" in
+        status|"")
+            say "текущая мощность $ifc: $(tx_now "$ifc") дБм"
+            say "сохранённое ограничение: $([ -f "$TX_FILE" ] && cat "$TX_FILE" || echo 'нет (полная мощность)')"
+            say "  wifi tx 5     - 5 дБм (минимум тока передатчика, дальность 2-3 м)"
+            say "  wifi tx 10    - 10 дБм (обычно достаточно в комнате)"
+            say "  wifi tx max   - снять ограничение"
+            say "  измерить просадку питания: pmic-vbus watch 30"
+            return 0 ;;
+        max|auto|off)
+            rm -f "$TX_FILE"
+            iw dev "$ifc" set txpower auto 2>/dev/null
+            ok "$ifc: мощность по умолчанию (auto), $(tx_now "$ifc") дБм"
+            return 0 ;;
+    esac
+    v=$(printf '%s' "$1" | tr -dc '0-9')
+    [ -n "$v" ] || { warn "нужно число дБм (например: wifi tx 5)"; return 1; }
+    [ "$v" -ge 1 ] && [ "$v" -le 20 ] || { warn "допустимо 1..20 дБм"; return 1; }
+    iw dev "$ifc" set txpower fixed $(( v * 100 )) 2>/dev/null \
+        || warn "iw не принял команду (интерфейс должен быть поднят: wifi up)"
+    echo "$v" > "$TX_FILE"
+    ok "$ifc: мощность ${v} дБм, сохранено в $TX_FILE (применяется при каждом подключении)"
+    say "  сейчас: $(tx_now "$ifc") дБм. Если просадки питания исчезли - дело было в нём."
+    say "  вернуть полную: wifi tx max"
+}
+
+# ------------------------------------------------------- power save драйвера
+cmd_ps() {
+    need_root
+    ifc=$(require_wl "$2") || return 1
+    case "${1:-status}" in
+        status|"") say "power save $ifc: $(iw dev "$ifc" get power_save 2>/dev/null | awk '{print $NF}')"
+                   say "  wifi ps off - выключить (стабильнее на некоторых драйверах, чуть больше ток)"
+                   say "  wifi ps on  - включить (экономия)" ;;
+        on)  iw dev "$ifc" set power_save on  2>/dev/null && ok "$ifc: power save ВКЛ" ;;
+        off) iw dev "$ifc" set power_save off 2>/dev/null && ok "$ifc: power save ВЫКЛ" ;;
+        *)   warn "использование: wifi ps on|off|status" ;;
+    esac
+}
+
+# ---------------------------------------------------------------- wifi up/down
+cmd_up() {
+    need_root
+    ifc=$(require_wl "") || return 1
+    ensure_conf; apply_reg
+    if ! have_saved_nets; then
+        warn "в $CONF нет ни одной сохранённой сети - выполните 'wifi connect <SSID> <пароль>'"
+        return 1
+    fi
+    wpa_running "$ifc" && { ok "wpa_supplicant уже работает на $ifc"; } || {
+        ip link set "$ifc" up 2>/dev/null
+        apply_tx "$ifc"
+        start_wpa "$ifc" || return 1
+    }
+    i=0
+    while [ $i -lt 45 ]; do
+        i=$((i+1))
+        assoc_ok "$ifc" && break
+        wpa_running "$ifc" || break
+        sleep 1
+    done
+    if assoc_ok "$ifc"; then
+        ok "$ifc подключён к '$(wpa_ssid "$ifc")' (за ${i} с)"
+        [ -n "$(ip4_of "$ifc")" ] || have_ip "$ifc"
+        ip4_of "$ifc" | sed '/./s/^/[wifi] адрес: /'
+        return 0
+    fi
+    warn "не подключилось за ${i} с (состояние $(wpa_state "$ifc"))"
+    diag_no_assoc "$ifc"
+    return 1
+}
+
+cmd_down() {
+    need_root
+    for ifc in $(wl_list); do
+        stop_wpa "$ifc"
+        killall udhcpc 2>/dev/null
+        ip addr flush dev "$ifc" 2>/dev/null
+        ip route del default 2>/dev/null
+        ok "$ifc: wpa_supplicant и udhcpc остановлены, адрес снят"
+    done
+    [ -n "$(wl_list)" ] || say "беспроводных интерфейсов нет"
+}
+
+# ---------------------------------------------------------------- wifi status
+cmd_status() {
+    load_stack
+    say "=== WiFi ==="
+    say "  страна: $(cat "$REG_FILE" 2>/dev/null || echo 'не задана (iw reg get)')   автоподключение: $([ -f "$AUTO_FLAG" ] && echo ВКЛ || echo выкл)"
+    say "  сохранено сетей: $(count_saved_nets)"
+    for ifc in $(wl_list); do
+        say "  --- $ifc: драйвер $(drv_of "$ifc"), USB $(usb_id_of "$ifc")"
+        st=$(wcli "$ifc" status)
+        if [ -n "$st" ]; then
+            echo "$st" | awk -F= '/^(ssid|bssid|freq|key_mgmt|pairwise_cipher|group_cipher|wpa_state|ip_address)=/{printf "      %-17s %s\n", $1":", $2}'
+        else
+            say "      wpa_supplicant не запущен"
+        fi
+        iw dev "$ifc" link 2>/dev/null | sed -n '2,6p' | sed 's/^/      /'
+        a=$(ip4_of "$ifc")
+        say "      адрес:         ${a:-НЕТ (IPv4)}"
+        say "      состояние:     $(cat /sys/class/net/$ifc/operstate 2>/dev/null)"
+        if [ -z "$a" ]; then
+            if assoc_ok "$ifc"; then
+                say "      -> точка ассоциирована, но адреса нет: wifi dhcp  (или wifi static ...)"
+            else
+                say "      -> не подключено: wifi connect '<SSID>' '<пароль>'"
+            fi
+        fi
+    done
+    say "  шлюз по умолчанию: $(ip route 2>/dev/null | awk '/^default/{print $3" ("$5")"; exit}')"
+    say "  DNS: $(grep -h '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{printf "%s ", $2}')"
+    n=$(wl_count); [ "$n" = 0 ] && say "  беспроводных интерфейсов НЕТ - смотрите 'wifi dev'"
+}
+
+cmd_log() {
+    [ -f "$LOG" ] || { say "$LOG нет"; return 0; }
+    say "=== $LOG (последние ${1:-40} строк) ==="
+    tail -"${1:-40}" "$LOG"
+}
+
+# ---------------------------------------------------------------- wifi fw
+cmd_fw() {
+    say "=== прошивки в /lib/firmware ==="
+    if [ -d /lib/firmware ]; then
+        say "  файлов: $(find /lib/firmware -type f | wc -l), объём: $(du -sh /lib/firmware | cut -f1)"
+        find /lib/firmware -type f | sed 's|/lib/firmware/||' | sort | tr '\n' ' ' | fold -w 76 | sed 's/^/  /'
+    else
+        warn "/lib/firmware нет"
+    fi
+    say ""
+    say "=== что просило ядро и не получило (dmesg) ==="
+    d=$(dmesg 2>/dev/null | grep -iE 'firmware' | tail -12)
+    [ -n "$d" ] && echo "$d" | sed 's/^/  /' || say "  ничего"
+    say ""
+    say "=== типовые адаптеры: драйвер -> прошивка ==="
+    cat <<'EOF'
+  RTL8188EU/8188FU/8192EU/8723BU (самые частые)  rtl8xxxu   rtlwifi/rtl8188eufw.bin, rtl8192eu_nic.bin, rtl8723bu_nic.bin
+  RTL8192CU/8188CU                               rtl8192cu  rtlwifi/rtl8192cufw.bin (или _A/_B/_TMSC)
+  RTL8712 (RTL8191SU/8192SU)                     r8712u     rtlwifi/rtl8712u.bin
+  RT3070/RT5370/RT5372 (Ralink/Mediatek)         rt2800usb  rt2870.bin
+  RT73USB                                        rt73usb    rt73.bin
+  MT7601U (Mediatek, "кукурузные" свистки)       mt7601u    mt7601u.bin
+  MT7610U/MT7650U                                mt76x0u    mediatek/mt7610u.bin, mediatek/mt7650.bin
+  MT7612U/MT7662U                                mt76x2u    mediatek/mt7662u.bin + _rom_patch.bin
+  AR9271 (Atheros)                               ath9k_htc  htc_9271.fw (или ath9k_htc/htc_9271-1.4.0.fw)
+  AR6004 (Atheros)                               ath6kl_usb ath6k/AR6004/hw1.3/{bdata.bin,fw-3.bin}
+  Carl9170 (Atheros AR9170)                      carl9170   carl9170-1.fw
+  Marvell 8797/8801/8766                         mwifiex_usb mrvl/usb8797_uapsta.bin и т.п.
+  Redpine RS9113/RS9116                          rsi_usb    rsi/rs9113_*.rps, rsi/rs9116_wlan.rps
+  Broadcom 43236/43242 (USB)                     brcmfmac   brcm/brcmfmac43236b.bin (+ .txt NVRAM, которого нет)
+  VIA VT6656                                     vt6656     vntwusb.fw
+  ZyDAS ZD1211/ZD1211B                           zd1211rw   zd1211/* (НЕ включено в образ - редкий, качать вручную)
+  Intersil ISL3886/3887 (p54)                    p54usb     isl3886usb/isl3887usb (НЕ включено в образ)
+  Atmel AT76C503                                 at76c50x   atmel_at76c502*.bin (НЕ включено в образ)
+EOF
+    say ""
+    say "если прошивки нет: скачайте её на ПК из linux-firmware и положите в"
+    say "/lib/firmware (раздел root виден из Linux; или scp root@192.168.77.1:/lib/firmware/)."
+    say "Затем: wifi down, вытащите адаптер и вставьте снова (или modprobe -r <драйвер>, потом modprobe <драйвер>)."
+}
+
+# ---------------------------------------------------------------- wifi reg
+cmd_reg() {
+    need_root; load_stack
+    cc=$(echo "$1" | tr 'a-z' 'A-Z' | tr -dc 'A-Z')
+    if [ -z "$cc" ]; then
+        say "текущая страна: $(iw reg get 2>/dev/null | head -1)"
+        say "сохранено в $REG_FILE: $(cat "$REG_FILE" 2>/dev/null || echo '-')"
+        say "установить: wifi reg RU   (для России; влияет на доступные каналы и мощность)"
+        return 0
+    fi
+    [ ${#cc} -eq 2 ] || die "код страны - две буквы (RU, US, DE, ...)"
+    if iw reg set "$cc" 2>/dev/null; then
+        echo "$cc" > "$REG_FILE"
+        sleep 1
+        cur=$(iw reg get 2>/dev/null | head -1)
+        case "$cur" in
+            *"country $cc"*)
+                ok "страна $cc применена и сохранена ($REG_FILE)"
+                iw reg get 2>/dev/null | head -4 | sed 's/^/  /' ;;
+            *)
+                warn "iw reg set принял $cc, но домен не сменился: $cur"
+                say "    причина: ядро отвергло подпись /lib/firmware/regulatory.db."
+                say "    проверка:  dmesg | grep -i regdb   (строка 'malformed or signature'"
+                say "    missing/invalid' = база подписана ключом, которого нет в ядре)."
+                say "    в b022+ лежит regdb 2023.09.01, подписанный sforshee - см."
+                say "    docs/regulatory-db.md. Каналы 12-13 при этом недоступны." ;;
+        esac
+    else
+        warn "iw reg set $cc не сработал (нет regulatory.db? нет cfg80211?)"
+    fi
+}
+
+cmd_auto() {
+    need_root
+    case "${1:-status}" in
+        on)  touch "$AUTO_FLAG"; ok "автоподключение при загрузке ВКЛЮЧЕНО ($AUTO_FLAG)"
+             ensure_conf
+             have_saved_nets || warn "в $CONF нет сохранённых сетей - сначала wifi connect" ;;
+        off) rm -f "$AUTO_FLAG"; ok "автоподключение выключено" ;;
+        *)   say "автоподключение: $([ -f "$AUTO_FLAG" ] && echo ВКЛЮЧЕНО || echo выключено)"
+             say "сохранённые сети:"
+             list_saved_nets ;;
+    esac
+}
+
+# ------------------------------------------------------------- wifi selftest
+# Проверка ТЕКСТОВОЙ логики конфига wpa_supplicant - без железа и без сети.
+# Появилась после того, как шаблоны grep/awk молча перестали совпадать с
+# настоящим конфигом от wpa_passphrase ("network={"): автоподключение при
+# загрузке не видело сохранённую сеть, 'wifi auto on' печатал ложное
+# предупреждение, 'wifi status' показывал 0 сетей, а повторный 'wifi connect'
+# плодил дубликаты блоков. Шаблоны сверены на GNU grep 3.8 и на busybox
+# grep/awk 1.36.1 (Alpine) - both дают одинаковый результат.
+cmd_selftest() {
+    rc=0; n=0; bad=0
+    t="${TMPDIR:-/tmp}/wifi-selftest.$$"
+    CONF_SAVE=$CONF; CONF=$t
+    st_ok()  { n=$((n+1)); say "  OK   $1"; }
+    st_bad() { n=$((n+1)); bad=$((bad+1)); say "  FAIL $1"; rc=1; }
+    st_eq()  { if [ "$2" = "$3" ]; then st_ok "$1 = $2"; else st_bad "$1: получено '$2', ожидалось '$3'"; fi; }
+
+    say "wifi selftest: логика конфига (временный файл $t)"
+    # конфиг ровно в том виде, в каком его оставляет wpa_passphrase + рукописный блок
+    printf 'ctrl_interface=/var/run/wpa_supplicant\nupdate_config=1\n' > "$t"
+    printf 'network={\n\tssid="First"\n\tpsk=aaaa\n}\n' >> "$t"
+    printf 'network = {\n\tssid="Second"\n\tkey_mgmt=NONE\n}\n' >> "$t"
+
+    st_eq "найдено сетей (форматы 'network={' и 'network = {')" "$(count_saved_nets)" 2
+    have_saved_nets && st_ok "have_saved_nets видит сети" || st_bad "have_saved_nets не видит сети"
+    st_eq "строк в списке сетей" "$(list_saved_nets | grep -c .)" 2
+    list_saved_nets | grep -q 'First' && st_ok "в списке есть First" || st_bad "в списке нет First"
+
+    net_block_del "First"
+    st_eq "сетей после удаления First" "$(count_saved_nets)" 1
+    grep -q 'ssid="First"' "$t" && st_bad "блок First не удалён" || st_ok "блок First удалён"
+    grep -q 'ssid="Second"' "$t" && st_ok "соседний блок Second не пострадал" || st_bad "net_block_del задел соседний блок"
+    grep -q '^update_config=1' "$t" && st_ok "строки вне блоков сохранены" || st_bad "повреждено содержимое вне блоков"
+
+    net_block_del "Second"
+    st_eq "сетей после удаления Second (формат 'network = {')" "$(count_saved_nets)" 0
+
+    # повторное подключение к той же сети не должно плодить дубликаты
+    printf 'network={\n\tssid="Dup"\n\tpsk=old\n}\n' >> "$t"
+    net_block_del "Dup"
+    printf 'network={\n\tssid="Dup"\n\tpsk=new\n}\n' >> "$t"
+    st_eq "блоков сети Dup после повторного connect" "$(grep -c 'ssid="Dup"' "$t")" 1
+    grep -q 'psk=new' "$t" && st_ok "новый пароль на месте" || st_bad "новый пароль потерялся"
+
+    # незакрытый блок не должен проглатывать остаток файла
+    printf 'network={\n\tssid="Broken"\n' > "$t"
+    net_block_del "NoSuchNet"
+    grep -q 'ssid="Broken"' "$t" && st_ok "незакрытый блок не потерян" || st_bad "незакрытый блок проглочен"
+
+    rm -f "$t"; CONF=$CONF_SAVE
+    if [ "$bad" -eq 0 ]; then ok "selftest: пройдено проверок $n, провалов 0"
+    else warn "selftest: провалено $bad из $n"; fi
+    return $rc
+}
+
+# ---------------------------------------------------------------- wifi ap
+cmd_ap() {
+    need_root
+    case "${1:-}" in
+        off) cmd_ap_off; return 0 ;;
+        "")  say "использование: wifi ap <SSID> [пароль] [канал]   (пароль >= 8 символов, без пароля - открытая сеть)"
+             say "остановить: wifi ap off"; return 0 ;;
+    esac
+    ssid=$1; pass=$2; ch=${3:-6}
+    ifc=$(require_wl "") || return 1
+    command -v hostapd >/dev/null 2>&1 || die "нет hostapd (pkg add hostapd)"
+    load_stack; apply_reg
+    stop_wpa "$ifc"; killall udhcpc 2>/dev/null
+    ip addr flush dev "$ifc" 2>/dev/null
+    {
+        echo "interface=$ifc"
+        echo "driver=nl80211"
+        echo "ssid=$ssid"
+        echo "hw_mode=g"
+        echo "channel=$ch"
+        echo "country_code=$(cat "$REG_FILE" 2>/dev/null || echo RU)"
+        echo "ieee80211d=1"
+        echo "wmm_enabled=1"
+        if [ -n "$pass" ]; then
+            echo "wpa=2"
+            echo "wpa_passphrase=$pass"
+            echo "wpa_key_mgmt=WPA-PSK"
+            echo "rsn_pairwise=CCMP"
+        else
+            echo "# открытая сеть (пароль не задан)"
+        fi
+        echo "ignore_broadcast_ssid=0"
+    } > "$HOSTAPD_CONF"
+    chmod 600 "$HOSTAPD_CONF"
+    ip addr add "$AP_IP/24" dev "$ifc" 2>/dev/null
+    ip link set "$ifc" up 2>/dev/null
+    hostapd -B -P "$RUN/hostapd.pid" "$HOSTAPD_CONF" >/dev/null 2>&1 \
+        || die "hostapd не стартовал (iw list: поддерживает ли адаптер режим AP?)"
+    if command -v dnsmasq >/dev/null 2>&1; then
+        killall dnsmasq 2>/dev/null
+        dnsmasq --interface="$ifc" --bind-interfaces --dhcp-range="$AP_NET.50,$AP_NET.150,12h" \
+            --dhcp-option=3,"$AP_IP" --dhcp-option=6,"$AP_IP" --port=53 \
+            --pid-file="$RUN/dnsmasq-ap.pid" >/dev/null 2>&1 \
+            && ok "DHCP+DNS на $ifc: адреса $AP_NET.50-$AP_NET.150"
+    else
+        warn "нет dnsmasq - клиенты получат адрес только при статике"
+    fi
+    ok "точка доступа '$ssid' на $ifc, канал $ch, адрес платы $AP_IP/24"
+    # если у платы самой есть интернет (например, usbnet nat) - раздаём его клиентам
+    gw=$(ip route 2>/dev/null | awk '/^default/ && $5 != "'"$ifc"'" {print $5; exit}')
+    if [ -n "$gw" ] && command -v iptables >/dev/null 2>&1; then
+        echo 1 > /proc/sys/net/ipv4/ip_forward
+        iptables -t nat -C POSTROUTING -o "$gw" -j MASQUERADE 2>/dev/null \
+            || iptables -t nat -A POSTROUTING -o "$gw" -j MASQUERADE
+        iptables -C FORWARD -i "$ifc" -o "$gw" -j ACCEPT 2>/dev/null \
+            || iptables -A FORWARD -i "$ifc" -o "$gw" -j ACCEPT
+        iptables -C FORWARD -i "$gw" -o "$ifc" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null \
+            || iptables -A FORWARD -i "$gw" -o "$ifc" -m state --state RELATED,ESTABLISHED -j ACCEPT
+        ok "клиентам точки доступа раздаётся интернет через $gw (NAT)"
+    else
+        say "  интернета у платы нет - точка доступа работает как локальная сеть"
+        say "  (дать плате интернет: usbnet nat  или  wifi connect ...)"
+    fi
+}
+
+cmd_ap_off() {
+    need_root
+    [ -f "$RUN/hostapd.pid" ] && kill "$(cat "$RUN/hostapd.pid")" 2>/dev/null
+    killall hostapd dnsmasq 2>/dev/null
+    rm -f "$RUN/hostapd.pid" "$RUN/dnsmasq-ap.pid"
+    for ifc in $(wl_list); do ip addr flush dev "$ifc" 2>/dev/null; done
+    echo 0 > /proc/sys/net/ipv4/ip_forward 2>/dev/null
+    ok "точка доступа остановлена"
+}
+
+# ---------------------------------------------------------------- wifi share
+# Раздать интернет с WiFi-адаптера на ПК по USB-кабелю (usb0 = RNDIS-гаджет).
+cmd_share() {
+    need_root
+    wl=$(wl_list | head -1)
+    gwif=$(ip route 2>/dev/null | awk '/^default/{print $5; exit}')
+    case "${1:-on}" in
+      off)
+        command -v iptables >/dev/null 2>&1 && {
+            iptables -t nat -D POSTROUTING -o "$wl" -j MASQUERADE 2>/dev/null
+            iptables -D FORWARD -i usb0 -o "$wl" -j ACCEPT 2>/dev/null
+            iptables -D FORWARD -i "$wl" -o usb0 -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null
+        }
+        echo 0 > /proc/sys/net/ipv4/ip_forward 2>/dev/null
+        [ -f "$RUN/dnsmasq-share.pid" ] && kill "$(cat "$RUN/dnsmasq-share.pid")" 2>/dev/null
+        killall dnsmasq 2>/dev/null
+        # вернуть udhcpd без router/dns (как делает usbnet)
+        if [ -f /etc/udhcpd-usb0.conf ] && [ -f /etc/udhcpd-usb0.conf.bak ]; then
+            cp /etc/udhcpd-usb0.conf.bak /etc/udhcpd-usb0.conf
+            killall udhcpd 2>/dev/null; udhcpd /etc/udhcpd-usb0.conf 2>/dev/null
+        fi
+        ok "раздача интернета на ПК выключена (usbnet nat off / usbnet on - вернуть обычную схему)"
+        return 0 ;;
+      on|"") ;;
+      *) say "использование: wifi share [on|off]"; return 1 ;;
+    esac
+    [ -n "$wl" ] || die "нет WiFi-интерфейса (wifi connect <SSID> <пароль>)"
+    [ "$gwif" = "$wl" ] || warn "маршрут по умолчанию идёт не через $wl (${gwif:-нет}) - интернет может не раздаваться"
+    [ -e /sys/class/net/usb0 ] || warn "нет usb0 - сначала 'usbnet on'"
+    command -v iptables >/dev/null 2>&1 || die "нет iptables (pkg add iptables-legacy)"
+    mkdir -p "$RUN"
+    # udhcpd для ПК: добавляем router и dns (обычно usbnet их намеренно не отдаёт)
+    if [ -f /etc/udhcpd-usb0.conf ]; then
+        cp /etc/udhcpd-usb0.conf /etc/udhcpd-usb0.conf.bak
+        grep -q '^option\trouter' /etc/udhcpd-usb0.conf || {
+            printf 'option\trouter\t192.168.77.1\noption\tdns\t192.168.77.1\n' >> /etc/udhcpd-usb0.conf
+        }
+        killall udhcpd 2>/dev/null; sleep 1
+        udhcpd /etc/udhcpd-usb0.conf 2>/dev/null && ok "udhcpd на usb0 раздаёт адрес, шлюз и DNS (192.168.77.1)"
+    fi
+    # DNS-форвардер для ПК
+    if command -v dnsmasq >/dev/null 2>&1; then
+        killall dnsmasq 2>/dev/null
+        dnsmasq --listen-address=192.168.77.1 --bind-interfaces --port=53 \
+            --pid-file="$RUN/dnsmasq-share.pid" >/dev/null 2>&1 && ok "DNS-форвардер на 192.168.77.1"
+    fi
+    echo 1 > /proc/sys/net/ipv4/ip_forward
+    iptables -t nat -C POSTROUTING -o "$wl" -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o "$wl" -j MASQUERADE
+    iptables -C FORWARD -i usb0 -o "$wl" -j ACCEPT 2>/dev/null || iptables -A FORWARD -i usb0 -o "$wl" -j ACCEPT
+    iptables -C FORWARD -i "$wl" -o usb0 -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null \
+        || iptables -A FORWARD -i "$wl" -o usb0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+    ok "интернет с $wl раздаётся на ПК через usb0 (NAT включён)"
+    say "  на ПК адаптер RNDIS должен получить адрес 192.168.77.x, шлюз и DNS 192.168.77.1."
+    say "  если адрес уже был - отключите и подключите адаптер заново (или 'ipconfig /renew')."
+    say "  выключить: wifi share off"
+}
+
+# ---------------------------------------------------------------- usage
+usage() {
+    cat <<EOF
+wifi - USB-WiFi адаптер на Informer 701 (разъём на месте WiFi-модуля = USB2)
+
+  wifi dev                 что воткнуто, какой драйвер, каких прошивок не хватает
+  wifi scan [iface]        список сетей вокруг (сигнал, канал, тип защиты)
+  wifi connect SSID [пароль] [iface]
+                           подключиться и ЗАПОМНИТЬ сеть в
+                           /etc/wpa_supplicant/wpa_supplicant.conf
+  wifi up                  подключиться к запомненной сети (это же делает
+                           загрузка при wifi auto on)
+  wifi selftest            проверка логики конфига без железа (регекспы grep/awk)
+  wifi dhcp [iface]        заново запросить адрес по DHCP (без переподключения)
+  wifi static IP/маска [шлюз] [DNS]
+                           статический адрес (сохраняется в /etc/wifi-static);
+                           wifi static off - снять и вернуться к DHCP
+  wifi down                остановить wpa_supplicant/udhcpc, снять адрес
+  wifi status              интерфейс, сеть, сигнал, адрес, шлюз, DNS
+  wifi log [N]             последние N строк /var/log/wifi.log
+  wifi fw                  какие прошивки есть и что просило ядро
+  wifi tx [1..20|max]      мощность передатчика в дБм (сохраняется в
+                           /etc/wifi-txpower). wifi tx 5 - если плата виснет
+                           при подключении: передатчик даёт импульсы тока,
+                           а питание от USB ПК слабое. Замер: pmic-vbus watch
+  wifi ps on|off|status    power save драйвера (off - стабильнее на слабом питании)
+  wifi reg [RU|US|...]     страна (каналы/мощность); без аргумента - показать
+  wifi auto on|off|status  подключаться к запомненной сети при каждой загрузке
+  wifi ap SSID [пароль] [канал]
+                           плата = точка доступа (hostapd + DHCP 192.168.71.x);
+                           если у платы есть интернет - раздаст его клиентам
+  wifi ap off              остановить точку доступа
+  wifi share [on|off]      раздать интернет с WiFi на ПК по USB-кабелю (NAT)
+
+Интернет для пакетов: wifi connect ... (или usbnet nat - через ПК по кабелю).
+Типовая последовательность: wifi dev -> wifi scan -> wifi connect -> pkg update.
+EOF
+}
+
+# ---------------------------------------------------------------- main
+cmd=${1:-help}
+shift 2>/dev/null
+mkdir -p "$RUN" 2>/dev/null
+case "$cmd" in
+    dev|devices)   cmd_dev ;;
+    scan|sc)       cmd_scan "$@" ;;
+    connect|con)   cmd_connect "$@" ;;
+    up|start)      cmd_up ;;
+    down|stop)     cmd_down ;;
+    dhcp|ip)       cmd_dhcp "$@" ;;
+    tx|power)      cmd_tx "$@" ;;
+    ps)            cmd_ps "$@" ;;
+    static|stat)   cmd_static "$@" ;;
+    status|st)     cmd_status ;;
+    log)           cmd_log "$@" ;;
+    fw|firmware)   cmd_fw ;;
+    reg|country)   cmd_reg "$@" ;;
+    auto)          cmd_auto "$@" ;;
+    selftest|test) cmd_selftest ;;
+    ap)            cmd_ap "$@" ;;
+    share|nat)     cmd_share "$@" ;;
+    help|-h|--help|"") usage ;;
+    *)             usage; exit 1 ;;
+esac

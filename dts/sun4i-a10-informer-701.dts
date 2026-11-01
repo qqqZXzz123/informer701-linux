@@ -1,0 +1,354 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * Device tree for the "Informer 701" 7" tablet board
+ * (mainboard N708H6 / Allwinner "PAD_MAINCHIP_STD" reference design, rev V1.4)
+ *
+ * Hardware as read out of the vendor schematic (Shematic.pdf, N708H6):
+ *   SoC    : Allwinner A10 (sun4i), FBGA441
+ *   PMIC   : X-Powers AXP209 on TWI0 (PB0/PB1), IRQ -> NMI
+ *   DRAM   : 4x 1Gbit x8 DDR3 (H5TQ1G83BFR / K4B1G0846E) = 512 MiB, 32 bit bus
+ *   NAND   : Samsung K9HCG08U0M (MLC, 4 CE) on NFC
+ *   UART0  : PB22/PB23 -> test points TP20 (TX) / TP21 (RX), 115200 8N1
+ *   mmc0   : external microSD (TF_CARD), PF0-PF5, card detect PH1 (SD0-DET#)
+ *   keys   : LRADC0 ladder NEXT/PREV/VOL+/VOL-/HOME/ESC/ENTER
+ *   power  : AXP209 PWRON <- POWER button, UBOOT_SEL pin -> "UBOOT" button (FEL)
+ *
+ * Console-only configuration: LCD/camera/NAND are intentionally left disabled.
+ *
+ * Enabled here on purpose (b021+):
+ *   TWI1  (PB18/PB19) - accelerometer MMA7660FC (U48) at 0x4c, sheet P16
+ *   TWI2  (PB20/PB21) - capacitive touch controller (U24), sheet P17
+ *   USB0  - OTG: gadget networking + SSH over the same micro-USB cable
+ *   USB2  - host port wired to the desoldered WM-294 WiFi module footprint
+ *           (DP2/DM2); VBUS switch is driven by USB2-DRV = PH3 (sheet P16),
+ *           so a USB socket soldered there gets power and works as a host port.
+ *   USB1  - host port, not routed on this board.
+ */
+
+/dts-v1/;
+#include "sun4i-a10.dtsi"
+#include "sunxi-common-regulators.dtsi"
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+	model = "Informer 701 (N708H6, Allwinner A10)";
+	compatible = "informer,informer-701", "allwinner,sun4i-a10";
+
+	aliases {
+		serial0 = &uart0;
+		mmc0 = &mmc0;
+		/* детерминированная нумерация /dev/i2c-N: i2c0 = TWI0 (AXP209),
+		 * i2c1 = TWI1 (акселерометр MMA7660), i2c2 = TWI2 (тачскрин).
+		 * Без aliases ядро назначает номера в порядке probe - на практике
+		 * то же самое, но так надёжнее (i2c-core берёт id из alias). */
+		i2c0 = &i2c0;
+		i2c1 = &i2c1;
+		i2c2 = &i2c2;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	/* HDMI-разъём (лист P18 "HDMI"). Узел нужен драйверу sun4i_hdmi:
+	 * sun4i_hdmi_get_ddc() ищет remote-узел port@1 и берёт из него
+	 * "ddc-i2c-bus"; без remote-узла bind падает с -EINVAL. Поэтому узел
+	 * описан всегда, а сам HDMI включается статусами &de и &hdmi (в
+	 * варианте DTB "hdmi"). Так же сделано во всех A10-платах mainline. */
+	hdmi-connector {
+		compatible = "hdmi-connector";
+		type = "a";
+
+		port {
+			hdmi_con_in: endpoint {
+				remote-endpoint = <&hdmi_out_con>;
+			};
+		};
+	};
+};
+
+&hdmi_out {
+	hdmi_out_con: endpoint {
+		remote-endpoint = <&hdmi_con_in>;
+	};
+};
+
+&cpu0 {
+	cpu-supply = <&reg_dcdc2>;
+	/* Все точки OPP @ 1.4 В (конфигурация lowopp, проверена на плате в
+	 * b015/b016): штатная таблица A10 (912@1350, 864@1300, 624@1250 мВ) на
+	 * этой плате при питании от USB нестабильна - убивает снижение VDD-CPU
+	 * ниже 1.4 В, а не перестройка pll-core (cftest на flatvolt/lowopp
+	 * доказал, что переходы частоты работают). */
+	operating-points = <1008000 1400000
+			     912000 1400000
+			     864000 1400000
+			     624000 1400000>;
+};
+
+&i2c0 {
+	status = "okay";
+
+	axp209: pmic@34 {
+		reg = <0x34>;
+		interrupts = <0>;	/* NMI */
+	};
+};
+
+#include "axp209.dtsi"
+
+/* ------------------------------------------------------------------ TWI1/TWI2
+ * Лист P16 "WIFI-GSENSOR": акселерометр U48 = Freescale MMA7660FC (SOP10),
+ * 7-битный адрес 0x4c; SDA -> TWI1-SDA, SCL -> TWI1-SCK, DVDD/AVDD -> VCC-3V3
+ * (некоммутируемая рельса, поэтому чип жив всегда). INT1 -> PH0 (GS-INT1),
+ * INT2 -> PI10 (GS-INT2) - драйвер mma7660 работает опросом, они не нужны.
+ * Лист P3 "PIO ASSIGNMENT": TWI1_SCK = PB18, TWI1_SDA = PB19,
+ *                           TWI2_SCK = PB20, TWI2_SDA = PB21.
+ * Лист P17 "CAP_TP": контроллер тачскрина U24 сидит на TWI2 - шина включена
+ * заранее, узел самого тача добавим, когда будет известна модель и подключена
+ * панель (в ядре есть драйвер FT5x06: CONFIG_TOUCHSCREEN_EDT_FT5X06).
+ * Внешние подтяжки линий по схеме НЕ установлены (R112/R150/R152 = NC),
+ * поэтому включены внутренние подтяжки PB18-PB21 (bias-pull-up).
+ */
+&i2c1_pins {
+	bias-pull-up;
+};
+
+&i2c2_pins {
+	bias-pull-up;
+};
+
+&i2c1 {
+	clock-frequency = <100000>;
+	status = "okay";
+
+	mma7660: accelerometer@4c {
+		compatible = "fsl,mma7660";
+		reg = <0x4c>;
+	};
+};
+
+&i2c2 {
+	clock-frequency = <100000>;
+	status = "okay";
+};
+
+/* LRADC key ladder (sheet 18 "HDMI-KEY"):
+ * NEXT 0.19V  PREV 0.39V  VOL+ 0.60V  VOL- 0.80V
+ * HOME 0.98V  ESC  1.18V  ENTER 1.40V
+ */
+&lradc {
+	vref-supply = <&reg_ldo2>;
+	status = "okay";
+
+	button-190 {
+		label = "Next";
+		linux,code = <KEY_NEXT>;
+		channel = <0>;
+		voltage = <190000>;
+	};
+
+	button-390 {
+		label = "Prev";
+		linux,code = <KEY_PREVIOUS>;
+		channel = <0>;
+		voltage = <390000>;
+	};
+
+	button-600 {
+		label = "Volume Up";
+		linux,code = <KEY_VOLUMEUP>;
+		channel = <0>;
+		voltage = <600000>;
+	};
+
+	button-800 {
+		label = "Volume Down";
+		linux,code = <KEY_VOLUMEDOWN>;
+		channel = <0>;
+		voltage = <800000>;
+	};
+
+	button-980 {
+		label = "Home";
+		linux,code = <KEY_HOMEPAGE>;
+		channel = <0>;
+		voltage = <980000>;
+	};
+
+	button-1180 {
+		label = "Esc";
+		linux,code = <KEY_ESC>;
+		channel = <0>;
+		voltage = <1180000>;
+	};
+
+	button-1400 {
+		label = "Enter";
+		linux,code = <KEY_ENTER>;
+		channel = <0>;
+		voltage = <1400000>;
+	};
+};
+
+/* Boot medium: microSD in the TF slot (SDC0). Also used for the rootfs. */
+&mmc0 {
+	vmmc-supply = <&reg_vcc3v3>;
+	bus-width = <4>;
+	/* Линия SD0-DET# (PH1) на плате не работает как card-detect
+	 * (плавающий/инверсный уровень), из-за чего mmc-ядро считало
+	 * «карты нет» и вечность ждало root. Носитель загрузочный и
+	 * всегда на месте - просто игнорируем CD. */
+	broken-cd;
+	/* cd-gpios = <&pio 7 1 GPIO_ACTIVE_LOW>; */
+	status = "okay";
+};
+
+/* AXP209 rails, voltages per schematic cover sheet ("Power Supply" table):
+ *   DCDC2 = VDD-CPU  (1.25 V nominal, DVFS 1.0-1.4 V)
+ *   DCDC3 = VDD-INT  (1.2 V nominal)
+ *   LDO1  = RTC      (1.3 V)
+ *   LDO2  = AVCC     (3.0 V)
+ *   LDO3  = CSI0-IO  (2.8 V)
+ *   LDO4  = CSI1-IO  (3.3 V)
+ * DRAM 1.5 V and the 3.3 V system rail come from always-on SY8008 buck
+ * converters, no software control needed.
+ */
+&reg_dcdc2 {
+	regulator-always-on;
+	regulator-min-microvolt = <1000000>;
+	regulator-max-microvolt = <1400000>;
+	regulator-name = "vdd-cpu";
+};
+
+&reg_dcdc3 {
+	regulator-always-on;
+	regulator-min-microvolt = <1200000>;
+	regulator-max-microvolt = <1250000>;
+	regulator-name = "vdd-int";
+};
+
+&reg_ldo1 {
+	regulator-always-on;
+	regulator-min-microvolt = <1300000>;
+	regulator-max-microvolt = <1300000>;
+	regulator-name = "vdd-rtc";
+};
+
+&reg_ldo2 {
+	regulator-always-on;
+	regulator-min-microvolt = <3000000>;
+	regulator-max-microvolt = <3000000>;
+	regulator-name = "avcc";
+};
+
+&reg_ldo3 {
+	regulator-always-on;
+	regulator-min-microvolt = <2800000>;
+	regulator-max-microvolt = <2800000>;
+	regulator-name = "csi0-io";
+};
+
+&reg_ldo4 {
+	regulator-always-on;
+	regulator-min-microvolt = <3300000>;
+	regulator-max-microvolt = <3300000>;
+	regulator-name = "csi1-io";
+};
+
+&uart0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart0_pb_pins>;	/* PB22 = TX (TP20), PB23 = RX (TP21) */
+	status = "okay";
+};
+
+/* Watchdog ВКЛЮЧЁН (с b015): sunxi_wdt регистрирует arm_pm_restart, без него
+ * `reboot` печатал "Restarting system" и плата стояла до кнопки reset. Сам
+ * таймер при probe НЕ стартует - только по open("/dev/watchdog"), поэтому
+ * спонтанных рестартов нет (проверено на плате в b015/b016). Опциональная
+ * защита от зависания включается командой `wdt on`. */
+&wdt {
+	status = "okay";
+};
+
+/* --------------------------------------------------------------------- USB
+ * По схеме N708H6 (Shematic.pdf):
+ *   P03 PIO ASSIGNMENT:
+ *     PB9  GPIO_OUT  USB0-DRV     - включение VBUS для OTG-порта (host mode)
+ *     PH4  GPIO_IN   USB0-IDDET   - ID OTG-порта (в ПК = высокий -> device)
+ *     PH5  GPIO_IN   USB0-VBUSDET - детектор VBUS на OTG-порту
+ *     PH6  GPIO_OUT  USB1-DRV     - VBUS порта USB1
+ *     PH3  GPIO_OUT  USB2-DRV     - VBUS порта USB2
+ *
+ *   ВНИМАНИЕ про USB2-DRV: в таблице P03 строка разбита на две текстовые
+ *   строки, и сеть USB2-DRV стоит в колонке группы PH (PH3), а не PD.
+ *   PD21 = LCD0_D21 и PD22 = LCD0_D22 - это линии LCD, к USB они отношения
+ *   не имеют (проверено сопоставлением колонок: PD-группа @102/@113,
+ *   PH-группа @146/@156/@169). В сборках b017/b018 здесь ошибочно был PD22;
+ *   исправлено на PH3 в b020. На P16 сеть USB2-DRV идёт через R163 100K
+ *   (SOT-23 ключ питания рядом с площадкой WiFi-модуля).
+ *   P15 USB-CARD: mini-USB jack "usb_minib_H4_4A" -> DP0/DM0 = USB0 (OTG),
+ *       рядом TF-слот и SD0-DET#; питание - USBVBUS через ограничитель тока.
+ *   P16 WIFI-GSENSOR: разъём "WIFI_WM294H1_5A" -> DP2/DM2 = USB2 HOST,
+ *       плюс WIFI-VCC, WIFI-HOST-WAKEUP, WIFI-SHDN#, WIFI-RESET#. Модуль WiFi
+ *       на этой плате выпаян; на его место планируется запаять USB-разъём -
+ *       то есть это готовый порт USB2 HOST (VBUS включает PH3).
+ *   USB1 (DP1/DM1) на разъёмы не выведен, но контроллер оставляем включённым.
+ * Соответствие контроллеров A10: USB0 = musb (OTG), USB1 = ehci0/ohci0,
+ * USB2 = ehci1/ohci1.
+ */
+&otg_sram {
+	status = "okay";
+};
+
+&reg_usb0_vbus {
+	gpio = <&pio 1 9 GPIO_ACTIVE_HIGH>;	/* PB9 = USB0-DRV */
+	status = "okay";
+};
+
+&reg_usb1_vbus {
+	gpio = <&pio 7 6 GPIO_ACTIVE_HIGH>;	/* PH6 = USB1-DRV */
+	status = "okay";
+};
+
+&reg_usb2_vbus {
+	gpio = <&pio 7 3 GPIO_ACTIVE_HIGH>;	/* PH3 = USB2-DRV (b020: было PD22 - ошибка) */
+	status = "okay";
+};
+
+&usbphy {
+	usb0_id_det-gpios = <&pio 7 4 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>;
+	usb0_vbus_det-gpios = <&pio 7 5 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
+	usb0_vbus-supply = <&reg_usb0_vbus>;
+	usb1_vbus-supply = <&reg_usb1_vbus>;
+	usb2_vbus-supply = <&reg_usb2_vbus>;
+	status = "okay";
+};
+
+&usb_otg {
+	/* "otg": при подключении к ПК (ID высокий) порт работает как gadget -
+	 * сеть/SSH по USB; с OTG-кабелем и ID на землю - как host.
+	 * Вариант с принудительным gadget (dr_mode = "peripheral") собирается
+	 * отдельным DTB на случай, если линия PH4 на плате не разведена. */
+	dr_mode = "otg";
+	status = "okay";
+};
+
+&ehci0 {
+	status = "okay";
+};
+
+&ohci0 {
+	status = "okay";
+};
+
+&ehci1 {
+	status = "okay";
+};
+
+&ohci1 {
+	status = "okay";
+};
