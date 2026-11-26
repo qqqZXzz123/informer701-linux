@@ -1,0 +1,651 @@
+#!/bin/bash
+# rootfs-expand - расширение корневого раздела ext4 (/dev/mmcblk0p2) на SD-карте
+# и создание общего с Windows/macOS/Linux раздела (/dev/mmcblk0p3 -> /mnt/share)
+# в файловой системе exFAT или FAT32 с автоматическим монтированием при загрузке.
+set -euo pipefail
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH LC_NUMERIC=C
+
+SHARE_MP="/mnt/share"
+SHARE_LINK="/root/share"
+
+say()  { printf '%s\n' "$*"; }
+ok()   { printf '[rootfs-expand] %s\n' "$*"; }
+warn() { printf '[rootfs-expand] ВНИМАНИЕ: %s\n' "$*" >&2; }
+die()  { printf '[rootfs-expand] ОШИБКА: %s\n' "$*" >&2; exit 1; }
+need_root() { [ "$(id -u)" -eq 0 ] || die "нужны права root"; }
+
+human_mib() {
+    local sec="$1"
+    awk -v s="$sec" 'BEGIN {
+        mib = s / 2048.0;
+        if (mib >= 1024.0) printf "%.2f ГиБ (%.0f МиБ)", mib / 1024.0, mib;
+        else printf "%.0f МиБ", mib;
+    }'
+}
+
+parse_size_sectors() {
+    # Принимает: 4G, 4GiB, 512M, 512MiB, 25% (от $2 = доступных секторов)
+    local raw="${1:-}" span="${2:-0}"
+    raw=$(printf '%s' "$raw" | tr 'a-z,' 'A-Z.' | tr -d ' ')
+    case "$raw" in
+        *% )
+            local pct="${raw%%%}"
+            awk -v sp="$span" -v p="$pct" 'BEGIN {
+                if (p <= 0 || p >= 100) exit 1;
+                sec = int((sp * p / 100.0) / 2048) * 2048;
+                print sec;
+            }' || return 1
+            ;;
+        *G|*GIB|*GB)
+            local num="${raw%%G*}"
+            awk -v n="$num" 'BEGIN {
+                if (n <= 0) exit 1;
+                sec = int((n * 1024.0 * 2048.0 + 1024) / 2048) * 2048;
+                print sec;
+            }' || return 1
+            ;;
+        *M|*MIB|*MB)
+            local num="${raw%%M*}"
+            awk -v n="$num" 'BEGIN {
+                if (n <= 0) exit 1;
+                sec = int((n * 2048.0 + 1024) / 2048) * 2048;
+                print sec;
+            }' || return 1
+            ;;
+        *[0-9])
+            # По умолчанию число без суффикса трактуем как МиБ (если >= 64) или ГиБ (если <= 63)
+            awk -v n="$raw" 'BEGIN {
+                if (n <= 0) exit 1;
+                mib = (n < 64) ? (n * 1024.0) : n;
+                sec = int((mib * 2048.0 + 1024) / 2048) * 2048;
+                print sec;
+            }' || return 1
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+sanitize_label() {
+    local lbl="${1:-INFORMER}"
+    lbl=$(printf '%s' "$lbl" | tr 'a-z' 'A-Z' | tr -cd 'A-Z0-9_-' | cut -c1-11)
+    [ -n "$lbl" ] || lbl="INFORMER"
+    echo "$lbl"
+}
+
+resolve_root_part() {
+    local src=""
+    src=$(findmnt -n -o SOURCE / 2>/dev/null || true)
+    if [ -z "$src" ] || [ "$src" = "/dev/root" ]; then
+        src=$(sed -n 's/.*\<root=\([^ ]*\).*/\1/p' /proc/cmdline 2>/dev/null || true)
+    fi
+    if [ ! -b "$src" ]; then
+        local majmin devname
+        majmin=$(stat -c '%t:%T' / 2>/dev/null || true)
+        if [ -n "$majmin" ]; then
+            local maj=$((16#${majmin%:*})) min=$((16#${majmin#*:}))
+            if [ -e "/sys/dev/block/${maj}:${min}/uevent" ]; then
+                devname=$(awk -F= '/^DEVNAME=/{print "/dev/"$2}' "/sys/dev/block/${maj}:${min}/uevent")
+                [ -b "$devname" ] && src="$devname"
+            fi
+        fi
+    fi
+    echo "$src"
+}
+
+part_prefix_of() {
+    local disk="$1"
+    case "$disk" in
+        *[0-9]) echo "${disk}p" ;;
+        *)      echo "${disk}" ;;
+    esac
+}
+
+detect_disk() {
+    if [ -n "${OPT_DISK:-}" ]; then
+        [ -b "$OPT_DISK" ] || die "блочное устройство $OPT_DISK не найдено"
+        echo "$OPT_DISK"
+        return 0
+    fi
+    local rp
+    rp=$(resolve_root_part)
+    case "$rp" in
+        /dev/mmcblk[0-9]p[0-9]*) echo "${rp%p[0-9]*}"; return 0 ;;
+        /dev/loop[0-9]*p[0-9]*)  echo "${rp%p[0-9]*}"; return 0 ;;
+        /dev/nvme[0-9]*n[0-9]*p[0-9]*) echo "${rp%p[0-9]*}"; return 0 ;;
+        /dev/sd[a-z][0-9]*)      echo "${rp%[0-9]*}"; return 0 ;;
+    esac
+    [ -b /dev/mmcblk0 ] && { echo /dev/mmcblk0; return 0; }
+    die "не удалось определить SD-карту для корневого раздела ($rp)"
+}
+
+read_geometry() {
+    DISK=$(detect_disk)
+    PFX=$(part_prefix_of "$DISK")
+    P1="${PFX}1"
+    P2="${PFX}2"
+    P3="${PFX}3"
+
+    [ -b "$P1" ] || die "не найден раздел загрузки $P1"
+    [ -b "$P2" ] || die "не найден корневой раздел $P2"
+
+    DISK_SECTORS=$(blockdev --getsz "$DISK")
+    P1_START=$(cat "/sys/class/block/$(basename "$P1")/start")
+    P1_SIZE=$(cat "/sys/class/block/$(basename "$P1")/size")
+    P2_START=$(cat "/sys/class/block/$(basename "$P2")/start")
+    P2_SIZE=$(cat "/sys/class/block/$(basename "$P2")/size")
+
+    P3_EXISTS=0
+    P3_START=0
+    P3_SIZE=0
+    if [ -b "$P3" ] && [ -f "/sys/class/block/$(basename "$P3")/start" ]; then
+        P3_EXISTS=1
+        P3_START=$(cat "/sys/class/block/$(basename "$P3")/start")
+        P3_SIZE=$(cat "/sys/class/block/$(basename "$P3")/size")
+    fi
+
+    # Выравнивание конца диска по 1 МиБ (2048 секторов) с запасом 1 МиБ в хвосте карты
+    END_ALIGNED=$(( (DISK_SECTORS - 2048) / 2048 * 2048 ))
+    if [ "$END_ALIGNED" -lt $((P2_START + P2_SIZE)) ]; then
+        END_ALIGNED=$((P2_START + P2_SIZE))
+    fi
+
+    if [ "$P3_EXISTS" -eq 1 ]; then
+        FREE_AFTER_P2=$(( P3_START > (P2_START + P2_SIZE) ? P3_START - (P2_START + P2_SIZE) : 0 ))
+        FREE_TAIL=$(( END_ALIGNED > (P3_START + P3_SIZE) ? END_ALIGNED - (P3_START + P3_SIZE) : 0 ))
+        UNALLOC_SECTORS=$(( FREE_AFTER_P2 + FREE_TAIL ))
+    else
+        FREE_AFTER_P2=$(( END_ALIGNED - (P2_START + P2_SIZE) ))
+        [ "$FREE_AFTER_P2" -ge 0 ] || FREE_AFTER_P2=0
+        FREE_TAIL="$FREE_AFTER_P2"
+        UNALLOC_SECTORS="$FREE_AFTER_P2"
+    fi
+}
+
+print_status() {
+    read_geometry
+    say "===================================================================="
+    say " Разметка карты памяти: $DISK ($(human_mib "$DISK_SECTORS"))"
+    say "===================================================================="
+    say "  1) $(basename "$P1") (BOOT, vFAT) : $(human_mib "$P1_SIZE")  [сектор $P1_START]"
+    say "  2) $(basename "$P2") (rootfs, ext4): $(human_mib "$P2_SIZE")  [сектор $P2_START]"
+    if [ "$P3_EXISTS" -eq 1 ]; then
+        local p3_fs p3_lbl
+        p3_fs=$(blkid -s TYPE -o value "$P3" 2>/dev/null || echo "неизвестно")
+        p3_lbl=$(blkid -s LABEL -o value "$P3" 2>/dev/null || echo "-")
+        say "  3) $(basename "$P3") (SHARE, $p3_fs, метка '$p3_lbl'): $(human_mib "$P3_SIZE")  [сектор $P3_START]"
+    else
+        say "  3) $(basename "$P3") (общий с Windows): пока не создан"
+    fi
+    say "--------------------------------------------------------------------"
+    say "  Нераспределённое место на карте: $(human_mib "$UNALLOC_SECTORS")"
+    if mountpoint -q "$SHARE_MP" 2>/dev/null; then
+        say "  Автомонтирование общего раздела: СМОНТИРОВАН в $SHARE_MP ($SHARE_LINK)"
+        df -h / "$SHARE_MP" 2>/dev/null | sed 's/^/    /'
+    else
+        df -h / 2>/dev/null | sed 's/^/    /'
+    fi
+    say "===================================================================="
+}
+
+write_share_readme() {
+    local mp="$1" fs="$2" lbl="$3"
+    mkdir -p "$mp/files" "$mp/logs" "$mp/deb" 2>/dev/null || true
+    cat > "$mp/README.txt" <<EOF
+Informer 701 (Debian 12 Bookworm armhf) - общий раздел обмена с ПК ($lbl, $fs)
+================================================================================
+
+Этот раздел одинаково читается и записывается:
+  * на ПК (Windows 10/11, macOS, Linux) при подключении карты microSD в картридер;
+  * на самой плате Informer 701 по пути /mnt/share (и ссылке /root/share) -
+    монтируется автоматически при каждой загрузке службой informer701-share.service.
+
+Каталоги:
+  files/  - любые ваши файлы, скрипты, архивы и данные для обмена между ПК и платой;
+  logs/   - сюда команда 'savelog' автоматически дублирует отчёты диагностики платы;
+  deb/    - сюда можно положить скачанные на ПК пакеты *.deb (armhf) и установить
+            их на плате без интернета командой:  pkg local
+EOF
+    # Конвертируем перевод строк в CRLF для удобного открытия в Блокноте Windows
+    sed -i 's/$/\r/' "$mp/README.txt" 2>/dev/null || true
+}
+
+apply_layout() {
+    # $1 = new p2 size sectors
+    # $2 = p3 start sectors (0 if no p3)
+    # $3 = p3 size sectors  (0 if no p3)
+    # $4 = p3 fs (exfat | fat32 | keep | none)
+    # $5 = p3 label
+    local p2_new="$1" p3_start="$2" p3_new="$3" p3_fs="$4" p3_lbl="$5"
+
+    command -v sfdisk >/dev/null 2>&1 || die "не найден sfdisk (пакет fdisk)"
+    command -v resize2fs >/dev/null 2>&1 || die "не найден resize2fs (пакет e2fsprogs)"
+    if [ "$p3_fs" = "exfat" ]; then
+        command -v mkfs.exfat >/dev/null 2>&1 || die "не найден mkfs.exfat (установите пакет exfatprogs или выберите fat32)"
+    elif [ "$p3_fs" = "fat32" ]; then
+        command -v mkfs.vfat >/dev/null 2>&1 || die "не найден mkfs.vfat (пакет dosfstools)"
+    fi
+
+    [ "$p2_new" -ge "$P2_SIZE" ] || die "уменьшение смонтированного ext4 раздела не допускается ($p2_new < $P2_SIZE)"
+
+    # Сохраняем резервный дамп текущей таблицы разделов на /boot/logs (если смонтирован)
+    local dump orig_id p1_boot="" p1_type="c"
+    dump=$(sfdisk --dump "$DISK")
+    if mountpoint -q /boot 2>/dev/null; then
+        mkdir -p /boot/logs 2>/dev/null || true
+        printf '%s\n' "$dump" > "/boot/logs/mbr-backup-$(date +%Y%m%d-%H%M%S 2>/dev/null || echo boot).sfdisk" 2>/dev/null || true
+    fi
+
+    orig_id=$(printf '%s\n' "$dump" | awk '/^label-id:/{print $2; exit}')
+    if printf '%s\n' "$dump" | grep -E "^${P1}[[:space:]]" | grep -q 'bootable'; then
+        p1_boot=", bootable"
+    fi
+    p1_type=$(printf '%s\n' "$dump" | awk -v p="$P1" '$1==p { if (match($0, /type=[0-9a-fA-F]+/)) print substr($0, RSTART+5, RLENGTH-5) }')
+    [ -n "$p1_type" ] || p1_type="c"
+
+    # Размонтируем /mnt/share перед правкой таблицы разделов, если мы создаём/меняем p3
+    if [ "$p3_new" -gt 0 ] && [ "$p3_fs" != "keep" ]; then
+        if mountpoint -q "$SHARE_MP" 2>/dev/null; then
+            sync
+            umount "$SHARE_MP" || die "не удалось размонтировать $SHARE_MP (закройте файлы в $SHARE_MP)"
+        fi
+    fi
+
+    local p3_type="7"
+    case "$p3_fs" in
+        exfat) p3_type="7" ;;
+        fat32) p3_type="c" ;;
+        keep)
+            p3_type=$(printf '%s\n' "$dump" | awk -v p="$P3" '$1==p { if (match($0, /type=[0-9a-fA-F]+/)) print substr($0, RSTART+5, RLENGTH-5) }')
+            [ -n "$p3_type" ] || p3_type="7"
+            ;;
+    esac
+
+    local sf_tmp
+    sf_tmp=$(mktemp /tmp/rootfs-expand.XXXXXX)
+    {
+        echo "label: dos"
+        [ -n "$orig_id" ] && echo "label-id: $orig_id"
+        echo "unit: sectors"
+        echo ""
+        echo "${P1} : start= ${P1_START}, size= ${P1_SIZE}, type=${p1_type}${p1_boot}"
+        echo "${P2} : start= ${P2_START}, size= ${p2_new}, type=83"
+        if [ "$p3_new" -gt 0 ]; then
+            echo "${P3} : start= ${p3_start}, size= ${p3_new}, type=${p3_type}"
+        fi
+    } > "$sf_tmp"
+
+    ok "обновляю таблицу разделов MBR на $DISK (U-Boot SPL @ +8 КиБ не затрагивается)..."
+    sfdisk --no-reread --force "$DISK" < "$sf_tmp" >/dev/null
+    rm -f "$sf_tmp"
+
+    # Обновляем размеры и узлы разделов в ядре онлайн без перезагрузки
+    partx -u "$DISK" 2>/dev/null || partx -a "$DISK" 2>/dev/null || true
+    udevadm settle --timeout=5 2>/dev/null || true
+
+    if [ "$p2_new" -gt "$P2_SIZE" ]; then
+        ok "расширяю файловую систему ext4 на $P2 онлайн ($(human_mib "$P2_SIZE") -> $(human_mib "$p2_new"))..."
+        resize2fs "$P2"
+    else
+        ok "размер $P2 оставлен без изменений ($(human_mib "$P2_SIZE"))"
+    fi
+
+    if [ "$p3_new" -gt 0 ] && [ "$p3_fs" != "keep" ]; then
+        local w=0
+        while [ ! -b "$P3" ] && [ "$w" -lt 10 ]; do
+            partx -a -n 3 "$DISK" 2>/dev/null || partx -u "$DISK" 2>/dev/null || true
+            udevadm settle --timeout=1 2>/dev/null || sleep 1
+            w=$((w + 1))
+        done
+        [ -b "$P3" ] || die "ядро не создало устройство $P3 после обновления таблицы разделов; выполните reboot"
+
+        wipefs -a "$P3" >/dev/null 2>&1 || dd if=/dev/zero of="$P3" bs=1M count=2 status=none 2>/dev/null || true
+        if [ "$p3_fs" = "exfat" ]; then
+            modprobe -q exfat 2>/dev/null || true
+            ok "форматирую $P3 в exFAT (метка '$p3_lbl', тип MBR 0x07 - совместимо с Windows 10/11, файлы > 4 ГиБ)..."
+            mkfs.exfat -L "$p3_lbl" "$P3" >/dev/null
+        else
+            ok "форматирую $P3 в FAT32 / vFAT (метка '$p3_lbl', тип MBR 0x0c - совместимо со всеми версиями Windows)..."
+            mkfs.vfat -F 32 -n "$p3_lbl" "$P3" >/dev/null 2>&1 \
+                || mkfs.vfat -n "$p3_lbl" "$P3" >/dev/null
+        fi
+        udevadm trigger --name-match="$(basename "$P3")" 2>/dev/null || true
+        udevadm settle --timeout=3 2>/dev/null || true
+    fi
+
+    if [ "$p3_new" -gt 0 ]; then
+        if [ -x /usr/local/sbin/informer701-share-mount ]; then
+            SHARE_DEV="$P3" SHARE_MP="$SHARE_MP" /usr/local/sbin/informer701-share-mount restart
+        fi
+        if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1 \
+           && [ ! -e /etc/systemd/system/multi-user.target.wants/informer701-share.service ]; then
+            systemctl enable informer701-share.service >/dev/null 2>&1 || true
+        fi
+        if mountpoint -q "$SHARE_MP" 2>/dev/null && [ "$p3_fs" != "keep" ]; then
+            write_share_readme "$SHARE_MP" "$p3_fs" "$p3_lbl"
+        fi
+    fi
+
+    sync
+    say ""
+    ok "готово! Актуальное состояние разделов и точек монтирования:"
+    print_status
+}
+
+default_share_suggestion() {
+    # Предлагаем ~25% свободного места (от 64 МиБ до 16 ГиБ), оставляя под rootfs минимум 1 ГиБ (или весь текущий + 128 МиБ на малых картах)
+    local span="$1" cur_p2="$2"
+    awk -v sp="$span" -v p2="$cur_p2" 'BEGIN {
+        mib = sp / 2048.0;
+        p2_mib = p2 / 2048.0;
+        free_mib = mib - p2_mib;
+        if (free_mib < 96) { print "0"; exit; }
+        sug = int(free_mib * 0.30);
+        if (sug >= 16384) print "16G";
+        else if (sug >= 8192) print "8G";
+        else if (sug >= 4096) print "4G";
+        else if (sug >= 2048) print "2G";
+        else if (sug >= 1024) print "1G";
+        else {
+            m = int(sug / 64) * 64;
+            if (m < 64) m = 64;
+            print m "M";
+        }
+    }'
+}
+
+interactive_wizard() {
+    need_root
+    print_status
+    say ""
+
+    local span=$(( END_ALIGNED - P2_START ))
+
+    if [ "$P3_EXISTS" -eq 1 ]; then
+        say "Общий раздел $(basename "$P3") уже существует ($(human_mib "$P3_SIZE"))."
+        say "Выберите действие:"
+        say "  1) Проверить и смонтировать $(basename "$P3") в $SHARE_MP (включить автомонтирование)"
+        if [ "$FREE_AFTER_P2" -ge 16384 ]; then
+            say "  2) Расширить rootfs ($(basename "$P2")) в свободный зазор перед $(basename "$P3") (+$(human_mib "$FREE_AFTER_P2"))"
+        fi
+        say "  3) Переформатировать существующий $(basename "$P3") в exFAT или FAT32 (ВСЕ ДАННЫЕ НА $(basename "$P3") БУДУТ УДАЛЕНЫ)"
+        say "  q) Выход"
+        printf "Ваш выбор [1]: "
+        local ch=""
+        read -r ch || exit 0
+        ch="${ch:-1}"
+        case "$ch" in
+            1)
+                SHARE_DEV="$P3" SHARE_MP="$SHARE_MP" /usr/local/sbin/informer701-share-mount restart
+                if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+                    systemctl enable informer701-share.service >/dev/null 2>&1 || true
+                fi
+                ok "раздел $P3 смонтирован в $SHARE_MP (ссылка $SHARE_LINK), автозапуск включён"
+                return 0
+                ;;
+            2)
+                [ "$FREE_AFTER_P2" -ge 16384 ] || die "перед $P3 нет свободного зазора"
+                local p2_target=$(( P3_START - P2_START ))
+                apply_layout "$p2_target" "$P3_START" "$P3_SIZE" "keep" "INFORMER"
+                return 0
+                ;;
+            3)
+                printf "Файловая система для %s: 1=exFAT (рекомендуется), 2=FAT32 [1]: " "$(basename "$P3")"
+                local fs_ch="" fs_sel="exfat" lbl_in=""
+                read -r fs_ch || exit 0
+                [ "${fs_ch:-1}" = "2" ] && fs_sel="fat32"
+                printf "Метка тома (латиницей, до 11 символов) [INFORMER]: "
+                read -r lbl_in || exit 0
+                lbl_in=$(sanitize_label "${lbl_in:-INFORMER}")
+                printf "Точно отформатировать %s (%s) в %s? Все файлы на нём будут стёрты! [y/N]: " \
+                    "$P3" "$(human_mib "$P3_SIZE")" "$fs_sel"
+                local yn=""
+                read -r yn || exit 0
+                case "$yn" in
+                    [yY]|[yY][eE][sS]|[дД]|[дД][аА])
+                        apply_layout "$P2_SIZE" "$P3_START" "$P3_SIZE" "$fs_sel" "$lbl_in"
+                        ;;
+                    *) say "Отменено."; exit 0 ;;
+                esac
+                return 0
+                ;;
+            *)
+                say "Выход без изменений."
+                return 0
+                ;;
+        esac
+    fi
+
+    if [ "$UNALLOC_SECTORS" -lt 32768 ]; then
+        ok "свободного нераспределённого места почти нет ($(human_mib "$UNALLOC_SECTORS")) — раздел уже расширен."
+        return 0
+    fi
+
+    local sug
+    sug=$(default_share_suggestion "$span" "$P2_SIZE")
+
+    say "Как распределить свободное пространство карты ($(human_mib "$UNALLOC_SECTORS"))?"
+    if [ "$sug" != "0" ]; then
+        say "  1) Расширить rootfs (Linux) + создать общий раздел для Windows/ПК ($SHARE_MP) [рекомендуется]"
+        say "  2) Отдать всё свободное место только под rootfs (Linux /, без раздела для Windows)"
+        say "  3) Не менять размер rootfs, отдать всё свободное место под общий раздел Windows ($SHARE_MP)"
+        say "  q) Выход"
+        printf "Ваш выбор [1]: "
+    else
+        say "  1) Отдать всё свободное место под rootfs (Linux /)"
+        say "  q) Выход"
+        printf "Ваш выбор [1]: "
+    fi
+
+    local mode=""
+    read -r mode || exit 0
+    mode="${mode:-1}"
+    if [ "$sug" = "0" ] && [ "$mode" = "1" ]; then
+        mode="2"
+    fi
+
+    case "$mode" in
+        1)
+            printf "Размер общего раздела Windows (например 2G, 4G, 8G, 16G, 512M или 30%%) [%s]: " "$sug"
+            local sz_in="" share_sec=0
+            read -r sz_in || exit 0
+            sz_in="${sz_in:-$sug}"
+            share_sec=$(parse_size_sectors "$sz_in" "$span") || die "некорректный размер '$sz_in' (примеры: 4G, 512M, 25%)"
+            [ "$share_sec" -ge 65536 ] || die "минимальный размер общего раздела — 32 МиБ"
+            local p3_start=$(( END_ALIGNED - share_sec ))
+            p3_start=$(( p3_start / 2048 * 2048 ))
+            local p2_new=$(( p3_start - P2_START ))
+            if [ "$p2_new" -lt "$P2_SIZE" ]; then
+                die "размер общего раздела ($(human_mib "$share_sec")) больше свободного места ($(human_mib "$UNALLOC_SECTORS"))"
+            fi
+
+            local def_fs="1"
+            # Для разделов <= 2 ГиБ FAT32 и exFAT одинаково удобны; > 4 ГиБ рекомендуем exFAT
+            say ""
+            say "Выберите файловую систему для общего раздела Windows:"
+            say "  1) exFAT  — нативно в Windows 7/8/10/11, macOS и Linux, файлы > 4 ГиБ, русские имена UTF-8"
+            say "  2) FAT32  — максимальная совместимость со старыми ОС и устройствами (файлы до 4 ГиБ)"
+            printf "Файловая система [%s]: " "$def_fs"
+            local fs_ch="" fs_sel="exfat"
+            read -r fs_ch || exit 0
+            [ "${fs_ch:-$def_fs}" = "2" ] && fs_sel="fat32"
+
+            printf "Метка диска для отображения в Windows [INFORMER]: "
+            local lbl_in=""
+            read -r lbl_in || exit 0
+            lbl_in=$(sanitize_label "${lbl_in:-INFORMER}")
+
+            say ""
+            say "План разметки $DISK:"
+            say "  * $(basename "$P1") (BOOT)  : $(human_mib "$P1_SIZE") (без изменений)"
+            say "  * $(basename "$P2") (rootfs): $(human_mib "$P2_SIZE") -> $(human_mib "$p2_new") (ext4, онлайн)"
+            say "  * $(basename "$P3") (SHARE) : $(human_mib "$share_sec") ($fs_sel, метка '$lbl_in', автомонтирование в $SHARE_MP)"
+            printf "Выполнить разметку и форматирование сейчас? [Y/n]: "
+            local yn=""
+            read -r yn || exit 0
+            case "${yn:-Y}" in
+                [yY]|[yY][eE][sS]|[дД]|[дД][аА])
+                    apply_layout "$p2_new" "$p3_start" "$share_sec" "$fs_sel" "$lbl_in"
+                    ;;
+                *) say "Отменено."; exit 0 ;;
+            esac
+            ;;
+        2)
+            local p2_new=$(( END_ALIGNED - P2_START ))
+            say ""
+            say "План разметки $DISK:"
+            say "  * $(basename "$P1") (BOOT)  : $(human_mib "$P1_SIZE") (без изменений)"
+            say "  * $(basename "$P2") (rootfs): $(human_mib "$P2_SIZE") -> $(human_mib "$p2_new") (всё свободное место)"
+            printf "Выполнить онлайн-расширение rootfs сейчас? [Y/n]: "
+            local yn=""
+            read -r yn || exit 0
+            case "${yn:-Y}" in
+                [yY]|[yY][eE][sS]|[дД]|[дД][аА])
+                    apply_layout "$p2_new" 0 0 "none" ""
+                    ;;
+                *) say "Отменено."; exit 0 ;;
+            esac
+            ;;
+        3)
+            local p3_start=$(( (P2_START + P2_SIZE + 2047) / 2048 * 2048 ))
+            local share_sec=$(( END_ALIGNED - p3_start ))
+            [ "$share_sec" -ge 65536 ] || die "недостаточно свободного места ($(human_mib "$share_sec"))"
+            printf "Файловая система: 1=exFAT (рекомендуется), 2=FAT32 [1]: "
+            local fs_ch="" fs_sel="exfat"
+            read -r fs_ch || exit 0
+            [ "${fs_ch:-1}" = "2" ] && fs_sel="fat32"
+            printf "Метка диска для отображения в Windows [INFORMER]: "
+            local lbl_in=""
+            read -r lbl_in || exit 0
+            lbl_in=$(sanitize_label "${lbl_in:-INFORMER}")
+            say ""
+            say "План разметки $DISK:"
+            say "  * $(basename "$P2") (rootfs): $(human_mib "$P2_SIZE") (без изменений)"
+            say "  * $(basename "$P3") (SHARE) : $(human_mib "$share_sec") ($fs_sel, метка '$lbl_in', автомонтирование в $SHARE_MP)"
+            printf "Создать и отформатировать общий раздел? [Y/n]: "
+            local yn=""
+            read -r yn || exit 0
+            case "${yn:-Y}" in
+                [yY]|[yY][eE][sS]|[дД]|[дД][аА])
+                    apply_layout "$P2_SIZE" "$p3_start" "$share_sec" "$fs_sel" "$lbl_in"
+                    ;;
+                *) say "Отменено."; exit 0 ;;
+            esac
+            ;;
+        *)
+            say "Выход без изменений."
+            ;;
+    esac
+}
+
+usage() {
+    cat <<'EOF'
+rootfs-expand - расширение корневого раздела и создание общего раздела для Windows
+
+Интерактивный запуск (диалог выбора размеров и ФС):
+  rootfs-expand
+
+Команды и ключи для быстрого / пакетного запуска:
+  rootfs-expand status                показать текущие разделы и свободное место
+  rootfs-expand mount                 смонтировать общий раздел (/dev/mmcblk0p3 -> /mnt/share)
+  rootfs-expand --all-root [--yes]    отдать всё свободное место под rootfs (ext4)
+  rootfs-expand --share-size РАЗМЕР [--fs exfat|fat32] [--label INFORMER] [--keep-root] [--yes]
+                                      расширить rootfs и создать общий с Windows раздел
+                                      (пример РАЗМЕРА: 4G, 16G, 512M, 30%)
+EOF
+}
+
+OPT_DISK=""
+MODE=""
+SHARE_SIZE=""
+SHARE_FS="exfat"
+SHARE_LABEL="INFORMER"
+KEEP_ROOT=0
+ASSUME_YES=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        status|st)       MODE="status"; shift ;;
+        mount|mnt)       MODE="mount"; shift ;;
+        umount|unmount)  MODE="umount"; shift ;;
+        --disk)          OPT_DISK="${2:-}"; shift 2 ;;
+        --all-root)      MODE="all-root"; shift ;;
+        --share-size)    MODE="share"; SHARE_SIZE="${2:-}"; shift 2 ;;
+        --fs)            SHARE_FS=$(printf '%s' "${2:-exfat}" | tr 'A-Z' 'a-z'); shift 2 ;;
+        --label)         SHARE_LABEL=$(sanitize_label "${2:-INFORMER}"); shift 2 ;;
+        --keep-root)     KEEP_ROOT=1; shift ;;
+        -y|--yes)        ASSUME_YES=1; shift ;;
+        -h|--help|help)  usage; exit 0 ;;
+        *)               die "неизвестный аргумент '$1' (справка: rootfs-expand --help)" ;;
+    esac
+done
+
+case "$SHARE_FS" in
+    exfat) ;;
+    fat32|vfat|fat) SHARE_FS="fat32" ;;
+    *) die "неподдерживаемая ФС '$SHARE_FS' (допустимо: exfat или fat32)" ;;
+esac
+
+case "$MODE" in
+    status)
+        print_status
+        ;;
+    mount)
+        need_root
+        read_geometry
+        SHARE_DEV="$P3" SHARE_MP="$SHARE_MP" /usr/local/sbin/informer701-share-mount start
+        ;;
+    umount)
+        need_root
+        SHARE_MP="$SHARE_MP" /usr/local/sbin/informer701-share-mount stop
+        ;;
+    all-root)
+        need_root
+        read_geometry
+        if [ "$P3_EXISTS" -eq 1 ]; then
+            P2_TARGET=$(( P3_START - P2_START ))
+            [ "$P2_TARGET" -ge "$P2_SIZE" ] || die "раздел $P3 уже расположен сразу за $P2"
+            apply_layout "$P2_TARGET" "$P3_START" "$P3_SIZE" "keep" "$SHARE_LABEL"
+        else
+            P2_TARGET=$(( END_ALIGNED - P2_START ))
+            if [ "$ASSUME_YES" -ne 1 ] && [ -t 0 ]; then
+                printf "Расширить %s до %s? [Y/n]: " "$P2" "$(human_mib "$P2_TARGET")"
+                read -r ans || exit 0
+                case "${ans:-Y}" in [yY]*|[дД]*) ;; *) say "Отменено."; exit 0 ;; esac
+            fi
+            apply_layout "$P2_TARGET" 0 0 "none" ""
+        fi
+        ;;
+    share)
+        need_root
+        read_geometry
+        [ "$P3_EXISTS" -eq 0 ] || die "раздел $P3 уже существует; запустите 'rootfs-expand' без аргументов для управления им"
+        SPAN=$(( END_ALIGNED - P2_START ))
+        SHARE_SEC=$(parse_size_sectors "$SHARE_SIZE" "$SPAN") || die "некорректный размер '$SHARE_SIZE'"
+        [ "$SHARE_SEC" -ge 65536 ] || die "минимальный размер общего раздела — 32 МиБ"
+        if [ "$KEEP_ROOT" -eq 1 ]; then
+            P2_TARGET="$P2_SIZE"
+            P3_TARGET_START=$(( (P2_START + P2_SIZE + 2047) / 2048 * 2048 ))
+            [ $((P3_TARGET_START + SHARE_SEC)) -le "$END_ALIGNED" ] \
+                || die "запрошенный размер $(human_mib "$SHARE_SEC") превышает свободное место ($(human_mib "$UNALLOC_SECTORS"))"
+        else
+            P3_TARGET_START=$(( (END_ALIGNED - SHARE_SEC) / 2048 * 2048 ))
+            P2_TARGET=$(( P3_TARGET_START - P2_START ))
+            [ "$P2_TARGET" -ge "$P2_SIZE" ] \
+                || die "запрошенный размер $(human_mib "$SHARE_SEC") превышает свободное место ($(human_mib "$UNALLOC_SECTORS"))"
+        fi
+        if [ "$ASSUME_YES" -ne 1 ] && [ -t 0 ]; then
+            printf "Расширить %s -> %s и создать %s (%s, %s)? [Y/n]: " \
+                "$P2" "$(human_mib "$P2_TARGET")" "$P3" "$(human_mib "$SHARE_SEC")" "$SHARE_FS"
+            read -r ans || exit 0
+            case "${ans:-Y}" in [yY]*|[дД]*) ;; *) say "Отменено."; exit 0 ;; esac
+        fi
+        apply_layout "$P2_TARGET" "$P3_TARGET_START" "$SHARE_SEC" "$SHARE_FS" "$SHARE_LABEL"
+        ;;
+    "")
+        interactive_wizard
+        ;;
+esac

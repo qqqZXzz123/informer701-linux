@@ -170,21 +170,56 @@ echo "  загружено модулей: $(wc -l < /proc/modules)"
 
 check "полный самотест /usr/local/bin/wifi selftest" \
     /usr/local/bin/wifi selftest
+check "полный самотест многоадаптерного конфигуратора /usr/local/bin/wifi-config selftest" \
+    /usr/local/bin/wifi-config selftest
+check "wifi config делегирует команды в wifi-config (STA + AP профили)" \
+    bash -e -c '
+        wifi config set-sta 00:e0:37:6f:b3:5b "RouterNet" "routerpass123"
+        wifi config set-ap  00:e0:4c:88:12:bb "InformerAP" "appass12345" 36
+        wifi config status | grep -q "RouterNet"
+        wifi config status | grep -q "InformerAP"
+        [ -f /etc/wifi-enabled ]
+        wifi config clear all
+        [ ! -f /etc/wifi-enabled ]
+    '
 
-# --- 6. Аппаратные и диагностические утилиты платы ---------------------------
-sect "6. Бортовые утилиты Informer 701 (devmem2, clk, regs, diag, bootnext, pkg...)"
+# --- 6. Аппаратные и диагностические утилиты платы + rootfs-expand -----------
+sect "6. Бортовые утилиты Informer 701, rootfs-expand (exFAT Windows) и savelog"
+check "/etc/default/locale задаёт LANG=C.UTF-8 (без предупреждений pam_env)" \
+    grep -q "^LANG=C.UTF-8$" /etc/default/locale
 check "devmem2 читает регистр CCU PLL1 (0x01c20000)" \
     bash -c 'devmem2 0x01c20000 w | grep -q "Read at address"'
 check "clk расшифровывает частоты CCU Allwinner A10" \
     bash -c 'clk | grep -q "PLL1_CFG"'
 check "regs читает регистры CCU/PIO/TWI0/WDOG" \
     bash -c 'regs | grep -q "WDOG_MODE"'
-check "info выводит сводку по плате" \
-    info
+check "rootfs-expand онлайн расширяет / и создаёт Windows-раздел /mnt/share (exFAT)" \
+    bash -e -c '
+        SPL_BEFORE=$(dd if=/dev/mmcblk0 bs=1k skip=8 count=500 status=none | sha256sum | awk "{print \$1}")
+        ROOT_BEFORE=$(df -Pm / | awk "NR==2{print \$2}")
+        rootfs-expand --share-size 128M --fs exfat --label INFORMER --yes
+        ROOT_AFTER=$(df -Pm / | awk "NR==2{print \$2}")
+        SPL_AFTER=$(dd if=/dev/mmcblk0 bs=1k skip=8 count=500 status=none | sha256sum | awk "{print \$1}")
+        echo "rootfs MiB: $ROOT_BEFORE -> $ROOT_AFTER; SPL sha256: $SPL_AFTER"
+        [ "$SPL_BEFORE" = "$SPL_AFTER" ]
+        [ "$ROOT_AFTER" -gt $((ROOT_BEFORE + 250)) ]
+        [ -b /dev/mmcblk0p3 ]
+        [ "$(blkid -s TYPE -o value /dev/mmcblk0p3)" = "exfat" ]
+        [ "$(blkid -s LABEL -o value /dev/mmcblk0p3)" = "INFORMER" ]
+        mountpoint -q /mnt/share
+        [ -f /mnt/share/README.txt ]
+        echo "Привет из Informer 701" > "/mnt/share/files/проверка-utf8.txt"
+        sync
+        systemctl restart informer701-share.service
+        mountpoint -q /mnt/share
+        grep -q "Привет из Informer 701" "/root/share/files/проверка-utf8.txt"
+    '
+check "info выводит сводку по плате и видит /mnt/share" \
+    bash -e -c 'info | grep -q "/mnt/share"'
 check "whichboot определяет носители" \
     whichboot
-check "savelog сохраняет отчёт diag + journalctl на FAT-раздел /boot/logs/" \
-    bash -e -c 'savelog && ls /boot/logs/diag-*.txt >/dev/null'
+check "savelog сохраняет отчёт и в /boot/logs/, и на общий раздел /mnt/share/logs/" \
+    bash -e -c 'savelog && ls /boot/logs/diag-*.txt >/dev/null && ls /mnt/share/logs/diag-*.txt >/dev/null'
 check "bootnext (список / -n safe / откат через informer701-bootinit) работает" \
     bash -e -c '
         bootnext | grep -q lowopp

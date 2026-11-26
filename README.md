@@ -34,14 +34,25 @@ USB2 с управлением VBUS по GPIO PH3), куда подключае�
     напрямую PID 1 `systemd` (`RuntimeWatchdogSec=16s`), критичные службы
     (`dropbear`, `haveged`, `informer701-usbnet`, `informer701-wifi`) запущены
     с политикой `Restart=always`.
-* **Wi-Fi (2.4 / 5 ГГц)**: поддержка USB-адаптеров, включая двухдиапазонный
+* **Расширение раздела и общий с Windows диск (`rootfs-expand`)**:
+  * онлайн-расширение корневого раздела `ext4` (`mmcblk0p2`) без перезагрузки;
+  * интерактивный диалог создания дополнительного раздела обмена `mmcblk0p3`
+    в совместимой с Windows файловой системе (**exFAT** или **FAT32**, метка
+    `INFORMER`) с автоматическим монтированием в **`/mnt/share`** (симлинк
+    **`/root/share`**) при каждой загрузке (`informer701-share.service`);
+  * автоматическое дублирование отчётов `savelog` в `/mnt/share/logs/` и установка
+    локальных пакетов `.deb` из `/mnt/share/deb/` командой `pkg local`.
+* **Wi-Fi (2.4 / 5 ГГц) и многоадаптерный конфигуратор (`wifi-config`)**: поддержка USB-адаптеров, включая двухдиапазонный
   **Realtek RTL8812BU / RTL8822BU** (`88x2bu.ko`, 802.11a/b/g/n/ac, `/etc/modprobe.d/blacklist-rtw88.conf`),
   а также Realtek `rtl8xxxu`/`rtlwifi`, Ralink/MediaTek `rt2800usb`/`mt7601u`,
   Atheros `ath9k_htc`/`carl9170` и др. + подписанный ключом `sforshee` `regulatory.db`.
-  Утилита `wifi` (интерфейсы `wlan0` и `wlx...`): `scan`, `connect`,
-  автоподключение (`informer701-wifi.service`), DHCP (`dhclient`) и статика,
-  двухдиапазонная точка доступа 2.4 / 5 ГГц (`wifi ap` через `hostapd` + `dnsmasq`),
-  раздача интернета (`wifi share` через `iptables-legacy` NAT), лимит мощности (`wifi tx`), `wifi selftest`.
+  * **`wifi-config` (`wifi config`)**: интерактивный и CLI-конфигуратор ролей нескольких
+    адаптеров с привязкой по постоянному MAC-адресу (защита от смены `wlan0`/`wlan1`)
+    и сохранением между перезагрузками — например, один адаптер подключается к домашней
+    Wi-Fi сети (`STA`), а второй одновременно раздаёт точку доступа 2.4 / 5 ГГц (`AP`) с NAT;
+  * утилита `wifi`: `scan`, `connect`, `apply`, автоподключение (`informer701-wifi.service`),
+    DHCP (`dhclient`) и статика, точка доступа (`wifi ap`), раздача на ПК (`wifi share`),
+    лимит мощности (`wifi tx`), `wifi selftest`.
 * **Пакетный менеджер (`apt`/`dpkg` + обёртка `pkg`)**: подключены полные официальные
   репозитории Debian 12 (`main contrib non-free non-free-firmware`); `pkg time`, `pkg update`,
   `pkg add <пакет>`, офлайн-установка `.deb` из раздела `BOOT/deb/` (`pkg local`).
@@ -78,22 +89,22 @@ USB2 с управлением VBUS по GPIO PH3), куда подключае�
 2. Запишите образ на карту microSD (≥ 1 ГиБ, рекомендуется ≥ 4 ГиБ):
    * Linux: `xz -dc informer701-*.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync`
    * Windows / macOS: **balenaEtcher** (пишет `.img.xz` напрямую) или **Rufus**.
-3. При необходимости расширьте корневой раздел на всю карту уже на плате:
-   `growpart /dev/mmcblk0 2` или `fdisk /dev/mmcblk0` + `resize2fs /dev/mmcblk0p2`.
+3. На работающей плате запустите **`rootfs-expand`** — интерактивный мастер расширит
+   корневой раздел `ext4` и предложит создать общий с Windows раздел (`exFAT` или `FAT32`,
+   автомонтируется в `/mnt/share` и `/root/share`).
 4. Подайте питание **5 В / не менее 2 А** и подключитесь по UART0 (`115200 8N1`)
    или по SSH через кабель micro-USB: `ssh root@192.168.77.1` (пароль `informer701`).
 
 Первые команды на плате:
 
 ```bash
-info                 # сводка по ОС Debian 12, памяти, zram, watchdog и PMIC
+rootfs-expand        # расширить rootfs + создать общий раздел для Windows (/mnt/share)
+info                 # сводка по ОС Debian 12, памяти, zram, /mnt/share, watchdog и PMIC
 whichboot            # активный профиль загрузки из extlinux.conf
 wdt status           # состояние аппаратного watchdog (/dev/watchdog + systemd)
 usbnet status        # состояние USB-сети (192.168.77.1) и SSH
-wifi dev             # подключённый USB-WiFi адаптер и драйвер
-wifi scan
-wifi connect 'МояСеть' 'пароль'
-wifi auto on         # автоподключение при старте через systemd
+wifi dev             # подключённые USB-WiFi адаптеры и драйверы
+wifi-config          # настроить роли адаптеров (например wlan0 -> сеть, wlan1 -> точка доступа)
 pkg time && pkg update && pkg add tmux
 pmic-vbus            # напряжение VBUS 5 В по АЦП AXP209
 accel                # показания акселерометра MMA7660 и ориентация платы
@@ -108,7 +119,7 @@ accel                # показания акселерометра MMA7660 и 
   (например, `v1.0.0`) и ручной запуск **Run workflow** (`workflow_dispatch` с
   опциональным `BUILD` ID и флагом полной пересборки ядра/U-Boot `from_source`).
 * **Обязательный контроль качества**: каждый собранный образ загружается в
-  `qemu-system-arm` с реальным `systemd` PID 1 (`scripts/qemu-test.sh`, 55 проверок);
+  `qemu-system-arm` с реальным `systemd` PID 1 (`scripts/qemu-test.sh`, 59 проверок);
   при любой ошибке сборка останавливается и битый образ не публикуется.
 * **Скачивание артефактов**: во вкладке **Actions** выберите завершённый прогон и в
   блоке **Artifacts** скачайте архив `informer701-<BUILD>` (хранится 30 дней:
@@ -123,7 +134,7 @@ accel                # показания акселерометра MMA7660 и 
 
 ```bash
 ./scripts/build-image.sh    # сборка в /tmp -> /tmp/out-debian/informer701-debian.img.xz
-./scripts/qemu-test.sh      # загрузка реального systemd PID 1 в QEMU (55 автотестов)
+./scripts/qemu-test.sh      # загрузка реального systemd PID 1 в QEMU (59 автотестов)
 ```
 
 ## Железо и лицензии

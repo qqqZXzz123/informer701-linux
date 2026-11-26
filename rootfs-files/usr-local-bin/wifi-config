@@ -1,0 +1,1026 @@
+#!/bin/bash
+# wifi-config - интерактивный и командный конфигуратор нескольких Wi-Fi адаптеров
+# для Informer 701 (Debian 12 Bookworm armhf).
+#
+# Позволяет назначить каждому адаптеру собственную постоянную роль (привязка по MAC,
+# USB VID:PID или имени интерфейса), сохраняемую между перезагрузками:
+#   * Адаптер 1 -> Клиент (STA): подключение к заданной Wi-Fi сети (2.4 / 5 ГГц);
+#   * Адаптер 2 -> Точка доступа (AP): раздача своей Wi-Fi сети (2.4 / 5 ГГц) + NAT.
+set -uo pipefail
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH LC_NUMERIC=C
+
+BASE_DIR="${WIFI_CFG_DIR:-/etc/informer701-wifi}"
+PROF_DIR="$BASE_DIR/profiles"
+REG_FILE="${WIFI_REG_FILE:-/etc/wifi-reg}"
+AUTO_FLAG="${WIFI_AUTO_FLAG:-/etc/wifi-enabled}"
+MODPROBE_88X2BU="${WIFI_MODPROBE_88X2BU:-/etc/modprobe.d/88x2bu-reg.conf}"
+
+say()  { printf '%s\n' "$*"; }
+ok()   { printf '[wifi-config] %s\n' "$*"; }
+warn() { printf '[wifi-config] ВНИМАНИЕ: %s\n' "$*" >&2; }
+die()  { printf '[wifi-config] ОШИБКА: %s\n' "$*" >&2; exit 1; }
+need_root() { [ "$(id -u)" -eq 0 ] || die "нужны права root"; }
+has_systemd() { [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; }
+
+# --- Чтение и запись KEY=VALUE без shell-интерполяции (безопасно для любых паролей) ---
+prof_get() {
+    local file="$1" key="$2"
+    [ -f "$file" ] || return 0
+    awk -v k="$key" 'index($0, k "=") == 1 { print substr($0, length(k) + 2); exit }' "$file" 2>/dev/null
+}
+
+prof_list_files() {
+    [ -d "$PROF_DIR" ] || return 0
+    local f
+    for f in "$PROF_DIR"/*.conf; do
+        [ -f "$f" ] && echo "$f"
+    done
+}
+
+prof_count() {
+    prof_list_files | wc -l | tr -d ' '
+}
+
+# --- Информация о физических беспроводных адаптерах ---
+wl_list() {
+    local netroot="${WIFI_SYS_NET:-/sys/class/net}"
+    local i n
+    for i in "$netroot"/*; do
+        [ -e "$i" ] || continue
+        n=$(basename "$i")
+        case "$n" in p2p*) continue ;; esac
+        if [ -d "$i/wireless" ] || [ -e "$i/phy80211" ]; then
+            echo "$n"
+        fi
+    done
+}
+
+mac_of() {
+    local netroot="${WIFI_SYS_NET:-/sys/class/net}"
+    tr 'A-Z' 'a-z' < "$netroot/$1/address" 2>/dev/null | tr -d ' \n\r' || true
+}
+
+drv_of() {
+    local netroot="${WIFI_SYS_NET:-/sys/class/net}"
+    local d
+    d=$(readlink -f "$netroot/$1/device/driver" 2>/dev/null || true)
+    [ -n "$d" ] && basename "$d" || echo "?"
+}
+
+usb_id_of() {
+    local netroot="${WIFI_SYS_NET:-/sys/class/net}"
+    local p
+    p=$(readlink -f "$netroot/$1/device" 2>/dev/null || true)
+    while [ -n "$p" ] && [ "$p" != "/" ]; do
+        if [ -f "$p/idVendor" ] && [ -f "$p/idProduct" ]; then
+            echo "$(tr 'A-Z' 'a-z' < "$p/idVendor"):$(tr 'A-Z' 'a-z' < "$p/idProduct")"
+            return 0
+        fi
+        p=$(dirname "$p")
+    done
+    echo "-"
+}
+
+phy_of() {
+    local netroot="${WIFI_SYS_NET:-/sys/class/net}"
+    if [ -f "$netroot/$1/phy80211/name" ]; then
+        cat "$netroot/$1/phy80211/name" 2>/dev/null
+    else
+        iw dev "$1" info 2>/dev/null | awk '/wiphy/{print "phy"$2; exit}'
+    fi
+}
+
+bands_of() {
+    local phy info has2=0 has5=0
+    phy=$(phy_of "$1")
+    [ -n "$phy" ] || { echo "2.4 ГГц"; return 0; }
+    info=$(iw phy "$phy" info 2>/dev/null || true)
+    printf '%s\n' "$info" | grep -qE '2412(\.0)? MHz' && has2=1
+    printf '%s\n' "$info" | grep -qE '5180(\.0)? MHz|5200(\.0)? MHz|5745(\.0)? MHz' && has5=1
+    if [ "$has2" -eq 1 ] && [ "$has5" -eq 1 ]; then
+        echo "2.4 + 5 ГГц"
+    elif [ "$has5" -eq 1 ]; then
+        echo "5 ГГц"
+    else
+        echo "2.4 ГГц"
+    fi
+}
+
+supports_5g() {
+    case "$(bands_of "$1")" in
+        *"5 ГГц"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# --- Разбор селектора адаптера (wlan0 | 00:e0:37:6f:b3:5b | usb:0bda:b812) ---
+resolve_selector() {
+    # Выводит 4 строки: ID, MATCH_MAC, MATCH_USB, MATCH_IFACE
+    local sel="${1:-}"
+    [ -n "$sel" ] || die "не указан адаптер (например wlan0, wlan1 или MAC-адрес)"
+    local low
+    low=$(printf '%s' "$sel" | tr 'A-Z' 'a-z')
+
+    case "$low" in
+        [0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f])
+            local slug="mac-$(printf '%s' "$low" | tr -d ':')"
+            local found_ifc="" found_usb=""
+            for i in $(wl_list); do
+                if [ "$(mac_of "$i")" = "$low" ]; then
+                    found_ifc="$i"
+                    found_usb=$(usb_id_of "$i")
+                    [ "$found_usb" = "-" ] && found_usb=""
+                    break
+                fi
+            done
+            printf '%s\n%s\n%s\n%s\n' "$slug" "$low" "$found_usb" "$found_ifc"
+            return 0
+            ;;
+        usb:[0-9a-f][0-9a-f][0-9a-f][0-9a-f]:[0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+            local vidpid="${low#usb:}"
+            local slug="usb-$(printf '%s' "$vidpid" | tr -d ':')"
+            printf '%s\n%s\n%s\n%s\n' "$slug" "" "$vidpid" ""
+            return 0
+            ;;
+        [0-9a-f][0-9a-f][0-9a-f][0-9a-f]:[0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+            local slug="usb-$(printf '%s' "$low" | tr -d ':')"
+            printf '%s\n%s\n%s\n%s\n' "$slug" "" "$low" ""
+            return 0
+            ;;
+        mac-*|usb-*|iface-*)
+            # Прямой ID существующего профиля
+            local pf="$PROF_DIR/${low}.conf"
+            if [ -f "$pf" ]; then
+                printf '%s\n%s\n%s\n%s\n' \
+                    "$low" \
+                    "$(prof_get "$pf" MATCH_MAC)" \
+                    "$(prof_get "$pf" MATCH_USB)" \
+                    "$(prof_get "$pf" MATCH_IFACE)"
+                return 0
+            fi
+            ;;
+    esac
+
+    # Имя сетевого интерфейса (wlan0, wlan1, ...): если адаптер сейчас подключён,
+    # привязываем по его постоянному MAC-адресу, чтобы при смене порядка wlan0/wlan1
+    # после перезагрузки настройки остались закреплёнными именно за этим адаптером!
+    local netroot="${WIFI_SYS_NET:-/sys/class/net}"
+    if [ -e "$netroot/$sel" ]; then
+        local m u
+        m=$(mac_of "$sel")
+        u=$(usb_id_of "$sel")
+        [ "$u" = "-" ] && u=""
+        if [ -n "$m" ] && [ "$m" != "00:00:00:00:00:00" ]; then
+            local slug="mac-$(printf '%s' "$m" | tr -d ':')"
+            printf '%s\n%s\n%s\n%s\n' "$slug" "$m" "$u" "$sel"
+            return 0
+        fi
+    fi
+
+    # Адаптер ещё не подключён — сохраняем профиль с привязкой по имени интерфейса
+    local clean_ifc
+    clean_ifc=$(printf '%s' "$low" | tr -cd 'a-z0-9_-')
+    [ -n "$clean_ifc" ] || die "некорректный идентификатор адаптера: '$sel'"
+    printf '%s\n%s\n%s\n%s\n' "iface-$clean_ifc" "" "" "$clean_ifc"
+}
+
+# --- Сопоставление сохранённых профилей с подключёнными адаптерами ---
+# Выводит строки: <iface> <profile_file> <id> <role>
+match_profiles() {
+    local ifaces=() profiles=()
+    local i f
+    for i in $(wl_list); do ifaces+=("$i"); done
+    for f in $(prof_list_files); do profiles+=("$f"); done
+    [ "${#ifaces[@]}" -gt 0 ] && [ "${#profiles[@]}" -gt 0 ] || return 0
+
+    local used_i="" used_p=""
+    # Проход 1: точное совпадение MAC-адреса (защита от перестановки wlan0/wlan1)
+    for i in "${ifaces[@]}"; do
+        local imac
+        imac=$(mac_of "$i")
+        [ -n "$imac" ] || continue
+        for f in "${profiles[@]}"; do
+            case " $used_p " in *" $f "*) continue ;; esac
+            local pmac
+            pmac=$(prof_get "$f" MATCH_MAC | tr 'A-Z' 'a-z')
+            if [ -n "$pmac" ] && [ "$pmac" = "$imac" ]; then
+                echo "$i $f $(prof_get "$f" ID) $(prof_get "$f" ROLE)"
+                used_i="$used_i $i"
+                used_p="$used_p $f"
+                break
+            fi
+        done
+    done
+
+    # Проход 2: совпадение по USB VID:PID для профилей без фиксированного MAC
+    for i in "${ifaces[@]}"; do
+        case " $used_i " in *" $i "*) continue ;; esac
+        local iusb
+        iusb=$(usb_id_of "$i")
+        [ -n "$iusb" ] && [ "$iusb" != "-" ] || continue
+        for f in "${profiles[@]}"; do
+            case " $used_p " in *" $f "*) continue ;; esac
+            local pmac pusb
+            pmac=$(prof_get "$f" MATCH_MAC)
+            pusb=$(prof_get "$f" MATCH_USB | tr 'A-Z' 'a-z')
+            if [ -z "$pmac" ] && [ -n "$pusb" ] && [ "$pusb" = "$iusb" ]; then
+                echo "$i $f $(prof_get "$f" ID) $(prof_get "$f" ROLE)"
+                used_i="$used_i $i"
+                used_p="$used_p $f"
+                break
+            fi
+        done
+    done
+
+    # Проход 3: совпадение по имени интерфейса (для преднастроенных iface-wlanX)
+    for i in "${ifaces[@]}"; do
+        case " $used_i " in *" $i "*) continue ;; esac
+        for f in "${profiles[@]}"; do
+            case " $used_p " in *" $f "*) continue ;; esac
+            local pmac pusb pifc
+            pmac=$(prof_get "$f" MATCH_MAC)
+            pusb=$(prof_get "$f" MATCH_USB)
+            pifc=$(prof_get "$f" MATCH_IFACE)
+            if [ -z "$pmac" ] && [ -z "$pusb" ] && [ "$pifc" = "$i" ]; then
+                echo "$i $f $(prof_get "$f" ID) $(prof_get "$f" ROLE)"
+                used_i="$used_i $i"
+                used_p="$used_p $f"
+                break
+            fi
+        done
+    done
+}
+
+profile_for_iface() {
+    local target="$1"
+    match_profiles | awk -v t="$target" '$1 == t { print $2; exit }'
+}
+
+# --- Генерация wpa_supplicant конфига для конкретного STA-профиля ---
+write_wpa_for_profile() {
+    local pf="$1"
+    local id ssid pass cc out
+    id=$(prof_get "$pf" ID)
+    ssid=$(prof_get "$pf" STA_SSID)
+    pass=$(prof_get "$pf" STA_PASS)
+    cc=$(cat "$REG_FILE" 2>/dev/null | tr -dc 'A-Z' || true)
+    [ -n "$cc" ] || cc="RU"
+    out="$BASE_DIR/wpa-${id}.conf"
+
+    mkdir -p "$BASE_DIR"
+    {
+        echo "# Автоматически сгенерировано wifi-config для профиля $id"
+        echo "ctrl_interface=/var/run/wpa_supplicant"
+        echo "ctrl_interface_group=0"
+        echo "update_config=1"
+        echo "ap_scan=1"
+        echo "country=$cc"
+        echo ""
+        if [ -n "$pass" ]; then
+            if command -v wpa_passphrase >/dev/null 2>&1; then
+                wpa_passphrase "$ssid" "$pass" | awk '
+                    /^[ \t]*#psk=/ { next }
+                    /^[ \t]*network=\{/ { print; print "\tscan_ssid=1"; next }
+                    { print }
+                '
+            else
+                printf 'network={\n\tssid="%s"\n\tscan_ssid=1\n\tpsk="%s"\n}\n' "$ssid" "$pass"
+            fi
+        else
+            printf 'network={\n\tssid="%s"\n\tscan_ssid=1\n\tkey_mgmt=NONE\n}\n' "$ssid"
+        fi
+    } > "$out"
+    chmod 600 "$out"
+}
+
+ap_hw_mode_for_chan() {
+    local ch="${1:-6}"
+    case "$ch" in ''|*[!0-9]*) echo "g"; return 0 ;; esac
+    if [ "$ch" -ge 36 ]; then echo "a"; else echo "g"; fi
+}
+
+# --- Генерация hostapd конфига для конкретного AP-профиля и интерфейса ---
+write_hostapd_for_profile() {
+    local pf="$1" ifc="$2"
+    local id ssid pass ch hw_mode cc phy phy_info out
+    id=$(prof_get "$pf" ID)
+    ssid=$(prof_get "$pf" AP_SSID)
+    pass=$(prof_get "$pf" AP_PASS)
+    ch=$(prof_get "$pf" AP_CHANNEL)
+    [ -n "$ch" ] || ch="6"
+    hw_mode=$(ap_hw_mode_for_chan "$ch")
+    cc=$(cat "$REG_FILE" 2>/dev/null | tr -dc 'A-Z' || true)
+    [ -n "$cc" ] || cc="RU"
+    phy=$(phy_of "$ifc")
+    phy_info=""
+    [ -n "$phy" ] && phy_info=$(iw phy "$phy" info 2>/dev/null || true)
+    out="$BASE_DIR/hostapd-${id}.conf"
+
+    mkdir -p "$BASE_DIR"
+    {
+        echo "# Автоматически сгенерировано wifi-config для профиля $id ($ifc)"
+        echo "interface=$ifc"
+        echo "driver=nl80211"
+        echo "ssid=$ssid"
+        echo "hw_mode=$hw_mode"
+        echo "channel=$ch"
+        echo "country_code=$cc"
+        echo "ieee80211d=1"
+        echo "wmm_enabled=1"
+        if printf '%s\n' "$phy_info" | grep -q 'HT20'; then
+            echo "ieee80211n=1"
+        fi
+        if [ "$hw_mode" = "a" ] && printf '%s\n' "$phy_info" | grep -q 'VHT Capabilities'; then
+            echo "ieee80211ac=1"
+        fi
+        if [ -n "$pass" ]; then
+            echo "wpa=2"
+            echo "wpa_passphrase=$pass"
+            echo "wpa_key_mgmt=WPA-PSK"
+            echo "rsn_pairwise=CCMP"
+        fi
+        echo "ignore_broadcast_ssid=0"
+    } > "$out"
+    chmod 600 "$out"
+    echo "$out"
+}
+
+next_free_ap_cidr() {
+    local cur_id="${1:-}"
+    local oct=71
+    while [ "$oct" -le 79 ]; do
+        local cand="192.168.${oct}.1/24" taken=0 f
+        for f in $(prof_list_files); do
+            [ "$(prof_get "$f" ID)" = "$cur_id" ] && continue
+            if [ "$(prof_get "$f" ROLE)" = "ap" ] && [ "$(prof_get "$f" AP_IP)" = "$cand" ]; then
+                taken=1
+                break
+            fi
+        done
+        if [ "$taken" -eq 0 ]; then
+            echo "$cand"
+            return 0
+        fi
+        oct=$((oct + 1))
+    done
+    echo "192.168.71.1/24"
+}
+
+enable_persistence() {
+    mkdir -p "$(dirname "$AUTO_FLAG")" "$(dirname "$REG_FILE")"
+    if [ ! -f "$REG_FILE" ]; then
+        echo "RU" > "$REG_FILE"
+    fi
+    local cc
+    cc=$(cat "$REG_FILE" 2>/dev/null | tr -dc 'A-Z' || true)
+    if [ -n "$cc" ] && [ -d "$(dirname "$MODPROBE_88X2BU")" ]; then
+        echo "options 88x2bu rtw_country_code=$cc" > "$MODPROBE_88X2BU" 2>/dev/null || true
+    fi
+    touch "$AUTO_FLAG"
+    if [ "$AUTO_FLAG" = "/etc/wifi-enabled" ] && has_systemd \
+       && [ ! -e /etc/systemd/system/multi-user.target.wants/informer701-wifi.service ]; then
+        systemctl enable informer701-wifi.service >/dev/null 2>&1 || true
+    fi
+}
+
+maybe_disable_persistence() {
+    if [ "$(prof_count)" -eq 0 ]; then
+        if [ ! -f /etc/wpa_supplicant/wpa_supplicant.conf ] || ! grep -q '^network[ =]*[{' /etc/wpa_supplicant/wpa_supplicant.conf 2>/dev/null; then
+            rm -f "$AUTO_FLAG"
+        fi
+    fi
+}
+
+# --- Удаление конфликтующих дубликатов профилей для одного и того же адаптера ---
+cleanup_duplicate_profiles() {
+    local keep_id="$1" mac="$2" ifc="$3"
+    local f
+    for f in $(prof_list_files); do
+        local fid fmac fifc
+        fid=$(prof_get "$f" ID)
+        [ "$fid" = "$keep_id" ] && continue
+        fmac=$(prof_get "$f" MATCH_MAC)
+        fifc=$(prof_get "$f" MATCH_IFACE)
+        if [ -n "$mac" ] && [ "$fmac" = "$mac" ]; then
+            rm -f "$f" "$BASE_DIR/wpa-${fid}.conf" "$BASE_DIR/hostapd-${fid}.conf"
+        elif [ -n "$mac" ] && [ -z "$fmac" ] && [ -n "$ifc" ] && [ "$fifc" = "$ifc" ]; then
+            rm -f "$f" "$BASE_DIR/wpa-${fid}.conf" "$BASE_DIR/hostapd-${fid}.conf"
+        fi
+    done
+}
+
+# --- Команды настройки STA и AP ---
+cmd_set_sta() {
+    need_root
+    local sel="${1:-}" ssid="${2:-}" pass="${3:-}"
+    [ -n "$sel" ] && [ -n "$ssid" ] || die "использование: wifi-config set-sta <iface|MAC> '<SSID>' ['<пароль>'] [--static IP/MASK [GW] [DNS]]"
+    shift 2
+    # Третий позиционный аргумент — пароль, если он не начинается с '--'
+    if [ $# -gt 0 ]; then
+        case "$1" in
+            --*) pass="" ;;
+            *)   pass="$1"; shift ;;
+        esac
+    fi
+
+    local ip_mode="dhcp" st_ip="" st_gw="" st_dns=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --dhcp) ip_mode="dhcp"; shift ;;
+            --static)
+                ip_mode="static"
+                st_ip="${2:-}"; shift 2 || die "укажите IP/маску после --static"
+                case "$st_ip" in */*) ;; *) st_ip="$st_ip/24" ;; esac
+                if [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; then st_gw="$1"; shift; fi
+                if [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; then st_dns="$1"; shift; fi
+                ;;
+            *) die "неизвестный параметр '$1'" ;;
+        esac
+    done
+
+    if [ -n "$pass" ] && { [ "${#pass}" -lt 8 ] || [ "${#pass}" -gt 63 ]; }; then
+        die "пароль WPA/WPA2 должен содержать от 8 до 63 символов (или оставьте пустым для открытой сети)"
+    fi
+
+    local resolved id mmac musb mifc
+    resolved=$(resolve_selector "$sel")
+    id=$(printf '%s\n' "$resolved" | sed -n '1p')
+    mmac=$(printf '%s\n' "$resolved" | sed -n '2p')
+    musb=$(printf '%s\n' "$resolved" | sed -n '3p')
+    mifc=$(printf '%s\n' "$resolved" | sed -n '4p')
+
+    mkdir -p "$PROF_DIR"
+    chmod 700 "$BASE_DIR" "$PROF_DIR" 2>/dev/null || true
+    cleanup_duplicate_profiles "$id" "$mmac" "$mifc"
+    rm -f "$BASE_DIR/hostapd-${id}.conf"
+
+    local pf="$PROF_DIR/${id}.conf"
+    {
+        printf 'ID=%s\n' "$id"
+        printf 'MATCH_MAC=%s\n' "$mmac"
+        printf 'MATCH_USB=%s\n' "$musb"
+        printf 'MATCH_IFACE=%s\n' "$mifc"
+        printf 'ROLE=sta\n'
+        printf 'STA_SSID=%s\n' "$ssid"
+        printf 'STA_PASS=%s\n' "$pass"
+        printf 'STA_IP_MODE=%s\n' "$ip_mode"
+        printf 'STA_IP=%s\n' "$st_ip"
+        printf 'STA_GW=%s\n' "$st_gw"
+        printf 'STA_DNS=%s\n' "$st_dns"
+    } > "$pf"
+    chmod 600 "$pf"
+
+    write_wpa_for_profile "$pf"
+    enable_persistence
+
+    ok "сохранён профиль STA '$id' (${mmac:+MAC $mmac}${mmac:+, }${mifc:-$sel}): подключение к '$ssid' ($ip_mode)"
+    say "  Автозапуск при загрузке включён. Применить прямо сейчас: wifi-config apply"
+}
+
+cmd_set_ap() {
+    need_root
+    local sel="${1:-}" ssid="${2:-}" pass="" ch="6"
+    [ -n "$sel" ] && [ -n "$ssid" ] || die "использование: wifi-config set-ap <iface|MAC> '<SSID>' ['<пароль>'] [канал] [--ip 192.168.71.1/24] [--no-nat]"
+    shift 2
+    if [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; then pass="$1"; shift; fi
+    if [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; then ch="$1"; shift; fi
+
+    local resolved id mmac musb mifc
+    resolved=$(resolve_selector "$sel")
+    id=$(printf '%s\n' "$resolved" | sed -n '1p')
+    mmac=$(printf '%s\n' "$resolved" | sed -n '2p')
+    musb=$(printf '%s\n' "$resolved" | sed -n '3p')
+    mifc=$(printf '%s\n' "$resolved" | sed -n '4p')
+
+    local ap_ip
+    ap_ip=$(next_free_ap_cidr "$id")
+    local ap_nat="1"
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --ip)     ap_ip="${2:-$ap_ip}"; shift 2 ;;
+            --nat)    ap_nat="1"; shift ;;
+            --no-nat) ap_nat="0"; shift ;;
+            *) die "неизвестный параметр '$1'" ;;
+        esac
+    done
+    case "$ap_ip" in */*) ;; *) ap_ip="$ap_ip/24" ;; esac
+
+    if [ -n "$pass" ] && { [ "${#pass}" -lt 8 ] || [ "${#pass}" -gt 63 ]; }; then
+        die "пароль точки доступа WPA2 должен быть от 8 до 63 символов (или пустым для открытой сети)"
+    fi
+    case "$ch" in
+        ''|*[!0-9]*) die "канал должен быть числом (1..13 для 2.4 ГГц или 36..165 для 5 ГГц)" ;;
+    esac
+    if [ "$ch" -lt 1 ] || { [ "$ch" -gt 14 ] && [ "$ch" -lt 36 ]; } || [ "$ch" -gt 165 ]; then
+        die "недопустимый канал $ch (используйте 1..13 для 2.4 ГГц или 36..165 для 5 ГГц)"
+    fi
+    if [ "$ch" -ge 36 ] && [ -n "$mifc" ] && [ -e "${WIFI_SYS_NET:-/sys/class/net}/$mifc" ]; then
+        if command -v iw >/dev/null 2>&1 && ! supports_5g "$mifc"; then
+            warn "адаптер $mifc сообщает только поддержку 2.4 ГГц — канал $ch (5 ГГц) может не запуститься!"
+        fi
+    fi
+
+    mkdir -p "$PROF_DIR"
+    chmod 700 "$BASE_DIR" "$PROF_DIR" 2>/dev/null || true
+    cleanup_duplicate_profiles "$id" "$mmac" "$mifc"
+    rm -f "$BASE_DIR/wpa-${id}.conf"
+
+    local pf="$PROF_DIR/${id}.conf"
+    {
+        printf 'ID=%s\n' "$id"
+        printf 'MATCH_MAC=%s\n' "$mmac"
+        printf 'MATCH_USB=%s\n' "$musb"
+        printf 'MATCH_IFACE=%s\n' "$mifc"
+        printf 'ROLE=ap\n'
+        printf 'AP_SSID=%s\n' "$ssid"
+        printf 'AP_PASS=%s\n' "$pass"
+        printf 'AP_CHANNEL=%s\n' "$ch"
+        printf 'AP_IP=%s\n' "$ap_ip"
+        printf 'AP_NAT=%s\n' "$ap_nat"
+    } > "$pf"
+    chmod 600 "$pf"
+
+    if [ -n "$mifc" ]; then
+        write_hostapd_for_profile "$pf" "$mifc" >/dev/null
+    else
+        write_hostapd_for_profile "$pf" "wlan0" >/dev/null
+    fi
+    enable_persistence
+
+    local band="2.4 ГГц"
+    [ "$ch" -ge 36 ] && band="5 ГГц"
+    ok "сохранён профиль AP '$id' (${mmac:+MAC $mmac}${mmac:+, }${mifc:-$sel}): точка доступа '$ssid' ($band, к.$ch, $ap_ip, NAT=$ap_nat)"
+    say "  Автозапуск при загрузке включён. Применить прямо сейчас: wifi-config apply"
+}
+
+cmd_clear() {
+    need_root
+    local sel="${1:-}"
+    [ -n "$sel" ] || die "использование: wifi-config clear <iface|MAC|ID|all>"
+    if [ "$sel" = "all" ]; then
+        rm -rf "$PROF_DIR"/*.conf "$BASE_DIR"/wpa-*.conf "$BASE_DIR"/hostapd-*.conf 2>/dev/null || true
+        maybe_disable_persistence
+        ok "все профили адаптеров удалены"
+        return 0
+    fi
+
+    local pf="$PROF_DIR/${sel}.conf"
+    if [ ! -f "$pf" ]; then
+        pf=$(profile_for_iface "$sel" || true)
+    fi
+    if [ -z "$pf" ] || [ ! -f "$pf" ]; then
+        local resolved id
+        resolved=$(resolve_selector "$sel")
+        id=$(printf '%s\n' "$resolved" | sed -n '1p')
+        pf="$PROF_DIR/${id}.conf"
+    fi
+    if [ -f "$pf" ]; then
+        local id
+        id=$(prof_get "$pf" ID)
+        rm -f "$pf" "$BASE_DIR/wpa-${id}.conf" "$BASE_DIR/hostapd-${id}.conf"
+        maybe_disable_persistence
+        ok "профиль '$id' удалён"
+    else
+        warn "профиль для '$sel' не найден"
+    fi
+}
+
+describe_profile() {
+    local pf="$1"
+    local role
+    role=$(prof_get "$pf" ROLE)
+    case "$role" in
+        sta)
+            local ssid ipm sip
+            ssid=$(prof_get "$pf" STA_SSID)
+            ipm=$(prof_get "$pf" STA_IP_MODE)
+            sip=$(prof_get "$pf" STA_IP)
+            printf "КЛИЕНТ (STA) -> сеть '%s' (%s%s)" "$ssid" "${ipm:-dhcp}" "${sip:+ $sip}"
+            ;;
+        ap)
+            local ssid ch apip nat pass band="2.4G"
+            ssid=$(prof_get "$pf" AP_SSID)
+            ch=$(prof_get "$pf" AP_CHANNEL)
+            apip=$(prof_get "$pf" AP_IP)
+            nat=$(prof_get "$pf" AP_NAT)
+            pass=$(prof_get "$pf" AP_PASS)
+            [ "${ch:-6}" -ge 36 ] 2>/dev/null && band="5G"
+            printf "ТОЧКА ДОСТУПА (AP) -> '%s' (%s к.%s, %s, %s, NAT=%s)" \
+                "$ssid" "$band" "${ch:-6}" "${pass:+WPA2}${pass:-open}" "${apip:-192.168.71.1/24}" "${nat:-1}"
+            ;;
+        *)
+            printf "отключён"
+            ;;
+    esac
+}
+
+cmd_status() {
+    local cc auto_str
+    cc=$(cat "$REG_FILE" 2>/dev/null | tr -dc 'A-Z' || true)
+    auto_str=$([ -f "$AUTO_FLAG" ] && echo "ВКЛЮЧЁН (сохраняется между перезагрузками)" || echo "выключен")
+
+    say "===================================================================="
+    say " Конфигуратор Wi-Fi адаптеров Informer 701"
+    say "===================================================================="
+    say "  Регуляторный домен : ${cc:-не задан (по умолчанию RU)}"
+    say "  Автозапуск на старте: $auto_str"
+    say "  Каталог профилей   : $PROF_DIR ($(prof_count) проф.)"
+    say "--------------------------------------------------------------------"
+    say " Подключённые сейчас Wi-Fi адаптеры:"
+
+    local idx=0 i
+    for i in $(wl_list); do
+        idx=$((idx + 1))
+        local m d u b ip4 pf role_str
+        m=$(mac_of "$i")
+        d=$(drv_of "$i")
+        u=$(usb_id_of "$i")
+        b=$(bands_of "$i")
+        ip4=$(ip -4 -o addr show dev "$i" 2>/dev/null | awk '{print $4}' | head -1 || true)
+        pf=$(profile_for_iface "$i")
+        if [ -n "$pf" ] && [ -f "$pf" ]; then
+            role_str=$(describe_profile "$pf")
+        else
+            role_str="не задана в wifi-config"
+        fi
+        say "  [$idx] $i  MAC=${m:-?}  драйвер=$d  USB=$u  ($b)"
+        say "      Текущий IPv4 : ${ip4:-нет}"
+        say "      Роль профиля : $role_str"
+    done
+    [ "$idx" -eq 0 ] && say "  (сейчас ни одного беспроводного интерфейса не обнаружено)"
+
+    local any_unmatched=0 f matched_files
+    matched_files=$(match_profiles | awk '{print $2}')
+    for f in $(prof_list_files); do
+        if ! printf '%s\n' "$matched_files" | grep -Fxq "$f"; then
+            if [ "$any_unmatched" -eq 0 ]; then
+                say "--------------------------------------------------------------------"
+                say " Сохранённые профили ожидающих подключения адаптеров:"
+                any_unmatched=1
+            fi
+            say "  * $(prof_get "$f" ID) (MAC=$(prof_get "$f" MATCH_MAC) USB=$(prof_get "$f" MATCH_USB) IFACE=$(prof_get "$f" MATCH_IFACE))"
+            say "      $(describe_profile "$f")"
+        fi
+    done
+    say "===================================================================="
+}
+
+cmd_reg() {
+    need_root
+    local cc
+    cc=$(printf '%s' "${1:-}" | tr 'a-z' 'A-Z' | tr -dc 'A-Z')
+    [ "${#cc}" -eq 2 ] || die "укажите двухбуквенный код страны (например: wifi-config reg RU)"
+    mkdir -p "$(dirname "$REG_FILE")"
+    echo "$cc" > "$REG_FILE"
+    if [ -d "$(dirname "$MODPROBE_88X2BU")" ]; then
+        echo "options 88x2bu rtw_country_code=$cc" > "$MODPROBE_88X2BU" 2>/dev/null || true
+    fi
+    command -v iw >/dev/null 2>&1 && iw reg set "$cc" 2>/dev/null || true
+    local f
+    for f in $(prof_list_files); do
+        if [ "$(prof_get "$f" ROLE)" = "sta" ]; then
+            write_wpa_for_profile "$f"
+        fi
+    done
+    ok "код страны $cc сохранён в $REG_FILE"
+}
+
+cmd_apply() {
+    need_root
+    if [ "$(prof_count)" -eq 0 ]; then
+        warn "нет сохранённых профилей адаптеров в $PROF_DIR (сначала настройте адаптеры через 'wifi-config')"
+        return 1
+    fi
+    enable_persistence
+    if has_systemd; then
+        # Чтобы systemd-служба контролировала оба адаптера и перезапускала при сбоях,
+        # применяем профили сейчас и запускаем/перезапускаем фонового супервизора.
+        /usr/local/bin/wifi apply
+        systemctl restart informer701-wifi.service >/dev/null 2>&1 || true
+    else
+        /usr/local/bin/wifi apply
+    fi
+}
+
+# --- Интерактивное сканирование сетей для выбора по номеру ---
+interactive_pick_ssid() {
+    local ifc="$1"
+    say "" >&2
+    printf "Просканировать эфир на %s для выбора сети из списка? [Y/n]: " "$ifc" >&2
+    local yn=""
+    read -r yn || return 1
+    case "${yn:-Y}" in
+        [nN]*) return 1 ;;
+    esac
+
+    say "Сканирую сети на $ifc (3–8 с)..." >&2
+    ip link set "$ifc" up 2>/dev/null || true
+    local raw
+    raw=$(iw dev "$ifc" scan 2>/dev/null || true)
+    if [ -z "$raw" ]; then
+        warn "не удалось выполнить сканирование на $ifc (возможно адаптер сейчас занят AP/STA — введите SSID вручную)."
+        return 1
+    fi
+
+    local list
+    list=$(printf '%s\n' "$raw" | awk '
+        function flush() {
+            if (ssid != "" && !(ssid in seen)) {
+                seen[ssid] = 1
+                sec = (rsn ? "WPA2" : (wpa ? "WPA" : (priv ? "WEP" : "open")))
+                printf "%6.1f\t%s\tch%s\t%s\t%s\n", sig, band, ch, sec, ssid
+            }
+            ssid=""; sig=-100; band="2.4G"; ch="?"; wpa=0; rsn=0; priv=0
+        }
+        /^BSS / { flush() }
+        /^[ \t]*freq:/ {
+            f = $2 + 0; if (f > 2400000) f /= 1000
+            if (f >= 4900) { band = "5G"; ch = int((f - 5000)/5 + 0.5) }
+            else if (f >= 2412) { band = "2.4G"; ch = (f == 2484 ? 14 : int((f - 2407)/5 + 0.5)) }
+        }
+        /^[ \t]*signal:/ { sig = $2 + 0 }
+        /^[ \t]*SSID:/   { ssid = substr($0, index($0, ":") + 2) }
+        /^[ \t]*capability:/ { if ($0 ~ /Privacy/) priv = 1 }
+        /^[ \t]*WPA:/    { wpa = 1 }
+        /^[ \t]*RSN:/    { rsn = 1 }
+        END { flush() }
+    ' | sort -rn | head -20)
+
+    if [ -z "$list" ]; then
+        warn "сети вокруг не найдены — введите SSID вручную."
+        return 1
+    fi
+
+    say "Найденные сети:" >&2
+    local n=0 line
+    while IFS=$'\t' read -r sig band ch sec s; do
+        [ -n "$s" ] || continue
+        n=$((n + 1))
+        printf "  %2d) %-30s  [%s дБм, %s %s, %s]\n" "$n" "$s" "$sig" "$band" "$ch" "$sec" >&2
+    done <<< "$list"
+    say "   0) Ввести SSID вручную" >&2
+    printf "Номер сети [1..%d или 0]: " "$n" >&2
+    local pick=""
+    read -r pick || return 1
+    case "$pick" in
+        ''|0|*[!0-9]*) return 1 ;;
+    esac
+    if [ "$pick" -ge 1 ] && [ "$pick" -le "$n" ]; then
+        printf '%s\n' "$list" | sed -n "${pick}p" | awk -F'\t' '{print $5}'
+        return 0
+    fi
+    return 1
+}
+
+configure_adapter_dialog() {
+    local sel="$1" live_ifc="${2:-}"
+    say ""
+    say "--- Настройка адаптера: $sel ${live_ifc:+($live_ifc, $(bands_of "$live_ifc"))} ---"
+    say "Выберите роль для этого адаптера:"
+    say "  1) Клиент Wi-Fi (STA) — подключаться к существующей Wi-Fi сети (роутеру/телефону)"
+    say "  2) Точка доступа (AP) — раздавать собственную Wi-Fi сеть (+ раздача интернета NAT)"
+    say "  3) Удалить профиль этого адаптера (не управлять им)"
+    say "  0) Назад"
+    printf "Ваш выбор [1]: "
+    local rch=""
+    read -r rch || return 0
+    case "${rch:-1}" in
+        1)
+            local ssid="" pass="" ipch=""
+            if [ -n "$live_ifc" ] && command -v iw >/dev/null 2>&1; then
+                ssid=$(interactive_pick_ssid "$live_ifc" || true)
+            fi
+            while [ -z "$ssid" ]; do
+                printf "Введите имя сети (SSID): "
+                read -r ssid || return 0
+            done
+            printf "Пароль сети '%s' (Enter — открытая сеть без пароля): " "$ssid"
+            read -r pass || return 0
+            printf "Настройка IP: 1=DHCP автоматически, 2=Статический IP [1]: "
+            read -r ipch || return 0
+            if [ "${ipch:-1}" = "2" ]; then
+                local sip="" sgw="" sdns=""
+                printf "IP-адрес и маска (например 192.168.1.50/24): "
+                read -r sip || return 0
+                printf "Шлюз (например 192.168.1.1, Enter — нет): "
+                read -r sgw || return 0
+                printf "DNS-сервер (например 1.1.1.1, Enter — нет): "
+                read -r sdns || return 0
+                cmd_set_sta "$sel" "$ssid" "$pass" --static "$sip" "$sgw" "$sdns"
+            else
+                cmd_set_sta "$sel" "$ssid" "$pass"
+            fi
+            ;;
+        2)
+            local ssid="" pass="" def_ch="6" ch="" nat_ch=""
+            if [ -n "$live_ifc" ] && supports_5g "$live_ifc"; then
+                say "Адаптер $live_ifc поддерживает 2.4 и 5 ГГц!"
+                say "  Каналы 2.4 ГГц: 1..13 (по умолчанию 6)"
+                say "  Каналы 5 ГГц  : 36, 40, 44, 48, 149"
+                def_ch="36"
+            fi
+            printf "Имя создаваемой точки доступа (SSID) [Informer701-AP]: "
+            read -r ssid || return 0
+            ssid="${ssid:-Informer701-AP}"
+            while :; do
+                printf "Пароль WPA2 (от 8 символов, либо Enter — открытая точка) [informer701]: "
+                read -r pass || return 0
+                if [ -z "$pass" ]; then
+                    printf "Сделать точку открытой без пароля (o) или использовать 'informer701' (p)? [p]: "
+                    local op=""
+                    read -r op || return 0
+                    case "${op:-p}" in
+                        [oO]*) pass=""; break ;;
+                        *)     pass="informer701"; break ;;
+                    esac
+                elif [ "${#pass}" -ge 8 ] && [ "${#pass}" -le 63 ]; then
+                    break
+                else
+                    warn "пароль WPA2 должен быть длиной от 8 до 63 символов"
+                fi
+            done
+            printf "Канал Wi-Fi (1..13 = 2.4 ГГц, 36/40/44/48/149 = 5 ГГц) [%s]: " "$def_ch"
+            read -r ch || return 0
+            ch="${ch:-$def_ch}"
+            printf "Раздавать интернет клиентам этой точки доступа со второго адаптера / сети (NAT)? [Y/n]: "
+            read -r nat_ch || return 0
+            case "${nat_ch:-Y}" in
+                [nN]*) cmd_set_ap "$sel" "$ssid" "$pass" "$ch" --no-nat ;;
+                *)     cmd_set_ap "$sel" "$ssid" "$pass" "$ch" --nat ;;
+            esac
+            ;;
+        3)
+            cmd_clear "$sel"
+            ;;
+        *)
+            ;;
+    esac
+}
+
+interactive_menu() {
+    need_root
+    while :; do
+        say ""
+        cmd_status
+        local ifcs=() i
+        for i in $(wl_list); do ifcs+=("$i"); done
+
+        say ""
+        say "Действия:"
+        local idx=0
+        for i in "${ifcs[@]}"; do
+            idx=$((idx + 1))
+            say "  $idx) Настроить адаптер $i (MAC $(mac_of "$i"), $(drv_of "$i"))"
+        done
+        say "  p) Предварительно настроить ещё не подключённый адаптер (по имени wlan1 или USB VID:PID)"
+        say "  r) Задать код страны Wi-Fi (RU, US, DE, ...)"
+        say "  a) ПРИМЕНИТЬ конфигурацию сейчас и активировать автозапуск при загрузке"
+        say "  c) Очистить все профили"
+        say "  q) Выход"
+        printf "Выберите пункт: "
+        local act=""
+        read -r act || exit 0
+        case "$act" in
+            [1-9])
+                if [ "$act" -le "${#ifcs[@]}" ]; then
+                    local chosen="${ifcs[$((act - 1))]}"
+                    configure_adapter_dialog "$chosen" "$chosen"
+                else
+                    warn "адаптера с номером $act нет"
+                fi
+                ;;
+            p|P)
+                printf "Укажите имя будущего интерфейса (например wlan1) или USB VID:PID (например 0bda:b812): "
+                local psel=""
+                read -r psel || exit 0
+                [ -n "$psel" ] && configure_adapter_dialog "$psel" ""
+                ;;
+            r|R)
+                printf "Двухбуквенный код страны [RU]: "
+                local cc_in=""
+                read -r cc_in || exit 0
+                cmd_reg "${cc_in:-RU}"
+                ;;
+            a|A)
+                cmd_apply
+                ;;
+            c|C)
+                printf "Удалить все сохранённые профили Wi-Fi адаптеров? [y/N]: "
+                local yn=""
+                read -r yn || exit 0
+                case "$yn" in [yY]*|[дД]*) cmd_clear all ;; esac
+                ;;
+            q|Q|"")
+                exit 0
+                ;;
+            *)
+                warn "неизвестный пункт '$act'"
+                ;;
+        esac
+    done
+}
+
+# --- Автотест логики сопоставления MAC / генерации конфигов двух адаптеров ---
+cmd_selftest() {
+    local tmp
+    tmp=$(mktemp -d /tmp/wifi-config-test.XXXXXX)
+    local rc=0 total=0 bad=0
+    t_ok()  { total=$((total + 1)); say "  OK   $1"; }
+    t_bad() { total=$((total + 1)); bad=$((bad + 1)); say "  FAIL $1"; rc=1; }
+    t_eq()  { if [ "$2" = "$3" ]; then t_ok "$1 = $2"; else t_bad "$1: получено '$2', ожидалось '$3'"; fi; }
+
+    # Эмулируем два беспроводных адаптера в sysfs: wlan0 (RTL8188FU) и wlan1 (RTL8812BU)
+    mkdir -p "$tmp/sys/wlan0/wireless" "$tmp/sys/wlan1/wireless" "$tmp/etc/profiles"
+    echo "00:e0:37:6f:b3:5b" > "$tmp/sys/wlan0/address"
+    echo "00:e0:4c:88:12:bb" > "$tmp/sys/wlan1/address"
+
+    WIFI_CFG_DIR="$tmp/etc" \
+    WIFI_SYS_NET="$tmp/sys" \
+    WIFI_REG_FILE="$tmp/reg" \
+    WIFI_AUTO_FLAG="$tmp/enabled" \
+    WIFI_MODPROBE_88X2BU="$tmp/88x2bu.conf" \
+        "$0" set-sta wlan0 "My Home Net" 'Pa$$w0rd#123!' >/dev/null
+
+    WIFI_CFG_DIR="$tmp/etc" \
+    WIFI_SYS_NET="$tmp/sys" \
+    WIFI_REG_FILE="$tmp/reg" \
+    WIFI_AUTO_FLAG="$tmp/enabled" \
+    WIFI_MODPROBE_88X2BU="$tmp/88x2bu.conf" \
+        "$0" set-ap wlan1 "Informer701-5G" "supersecret" 36 >/dev/null
+
+    local pf_sta="$tmp/etc/profiles/mac-00e0376fb35b.conf"
+    local pf_ap="$tmp/etc/profiles/mac-00e04c8812bb.conf"
+    [ -f "$pf_sta" ] && t_ok "создан профиль STA по MAC 00:e0:37:6f:b3:5b" || t_bad "нет $pf_sta"
+    [ -f "$pf_ap" ]  && t_ok "создан профиль AP по MAC 00:e0:4c:88:12:bb"  || t_bad "нет $pf_ap"
+    [ -f "$tmp/enabled" ] && t_ok "включён флаг автозапуска между перезагрузками" || t_bad "нет флага автозапуска"
+
+    t_eq "SSID с пробелом сохранён точно" "$(prof_get "$pf_sta" STA_SSID)" "My Home Net"
+    t_eq "спецсимволы пароля сохранены без искажений" "$(prof_get "$pf_sta" STA_PASS)" 'Pa$$w0rd#123!'
+    [ -f "$tmp/etc/wpa-mac-00e0376fb35b.conf" ] && t_ok "сгенерирован изолированный wpa_supplicant.conf для STA" || t_bad "нет wpa конфига"
+    grep -q 'hw_mode=a' "$tmp/etc/hostapd-mac-00e04c8812bb.conf" && t_ok "5 ГГц канал 36 -> hw_mode=a в hostapd" || t_bad "нет hw_mode=a"
+
+    # Меняем местами MAC-адреса wlan0 <-> wlan1 (имитация смены порядка инициализации USB после перезагрузки!)
+    echo "00:e0:4c:88:12:bb" > "$tmp/sys/wlan0/address"
+    echo "00:e0:37:6f:b3:5b" > "$tmp/sys/wlan1/address"
+
+    local m_out
+    m_out=$(WIFI_CFG_DIR="$tmp/etc" WIFI_SYS_NET="$tmp/sys" "$0" match)
+    t_eq "после смены порядка USB роль AP ушла за MAC на wlan0" \
+        "$(printf '%s\n' "$m_out" | awk '$1=="wlan0"{print $4}')" "ap"
+    t_eq "после смены порядка USB роль STA ушла за MAC на wlan1" \
+        "$(printf '%s\n' "$m_out" | awk '$1=="wlan1"{print $4}')" "sta"
+
+    rm -rf "$tmp"
+    if [ "$bad" -eq 0 ]; then
+        ok "selftest: пройдено проверок $total, ошибок 0"
+    else
+        warn "selftest: ошибок $bad из $total"
+    fi
+    return "$rc"
+}
+
+usage() {
+    cat <<'EOF'
+wifi-config - настройка ролей нескольких Wi-Fi адаптеров с сохранением между перезагрузками
+
+Интерактивное меню:
+  wifi-config                     запустить диалоговый конфигуратор адаптеров
+  wifi config                     то же самое (через команду wifi)
+
+Быстрая настройка из командной строки:
+  wifi-config status              показать адаптеры и назначенные им роли
+  wifi-config set-sta <iface|MAC> '<SSID>' ['<пароль>'] [--static IP/MASK [GW] [DNS]]
+                                  назначить адаптеру подключение к Wi-Fi сети (клиент STA)
+  wifi-config set-ap  <iface|MAC> '<SSID>' ['<пароль>'] [канал] [--ip 192.168.71.1/24] [--no-nat]
+                                  назначить адаптеру режим точки доступа (2.4 / 5 ГГц + NAT)
+  wifi-config apply               применить все роли сейчас и включить автозапуск при загрузке
+  wifi-config reg <RU|US|...>     задать регуляторный домен страны
+  wifi-config clear <iface|MAC|all>
+                                  удалить профиль адаптера (или все профили)
+  wifi-config selftest            самопроверка логики сопоставления MAC и генерации конфигов
+
+Пример (wlan0 подключается к роутеру, wlan1 раздаёт точку доступа 5 ГГц с интернетом):
+  wifi-config set-sta wlan0 "HomeRouter" "my_router_pass"
+  wifi-config set-ap  wlan1 "Informer701-5G" "informer701" 36
+  wifi-config apply
+EOF
+}
+
+case "${1:-}" in
+    "")                interactive_menu ;;
+    status|st|list)    shift; cmd_status "$@" ;;
+    set-sta|sta)       shift; cmd_set_sta "$@" ;;
+    set-ap|ap)         shift; cmd_set_ap "$@" ;;
+    clear|rm|del)      shift; cmd_clear "$@" ;;
+    apply|up|start)    shift; cmd_apply "$@" ;;
+    reg|country)       shift; cmd_reg "$@" ;;
+    match)             shift; match_profiles ;;
+    gen-hostapd)       shift; write_hostapd_for_profile "$1" "$2" ;;
+    gen-wpa)           shift; write_wpa_for_profile "$1" ;;
+    selftest|test)     shift; cmd_selftest ;;
+    -h|--help|help)    usage ;;
+    *)                 die "неизвестная команда '$1' (справка: wifi-config --help)" ;;
+esac

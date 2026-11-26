@@ -165,7 +165,7 @@ jobs:
           body: |
             Готовый загрузочный образ **Debian 12 (Bookworm) `armhf`** (`glibc`, `bash`, `systemd`, `apt`, Linux 6.6.0, U-Boot 2024.10) для платы **Explay Informer 701** (`N708H6`, Allwinner A10, 512 МиБ ОЗУ).
 
-            Проверен автоматическим стендом `qemu-test.sh` (55 проверок: `QTEST_RESULT: PASS`).
+            Проверен автоматическим стендом `qemu-test.sh` (59 проверок: `QTEST_RESULT: PASS`).
 
             **Запись на карту microSD:**
             ```bash

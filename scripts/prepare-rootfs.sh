@@ -163,7 +163,7 @@ DEBIAN_PKGS=(
     wpasupplicant iw wireless-tools rfkill hostapd ethtool
     dropbear-bin openssh-client curl wget ntpsec-ntpdate netbase
     # Аппаратная диагностика (I2C/PMIC/акселерометр, USB, ФС, память, UART, энтропия)
-    i2c-tools usbutils dosfstools e2fsprogs fdisk memtester picocom haveged
+    i2c-tools usbutils dosfstools exfatprogs e2fsprogs fdisk memtester picocom haveged
 )
 
 echo "[rootfs] 3/7 chroot apt-get install (${#DEBIAN_PKGS[@]} пакетов Debian armhf)"
@@ -251,12 +251,17 @@ install -m 0755 "$RF/sbin/hotplug" "$DEST/sbin/hotplug"
 
 echo "[rootfs] 6/7 конфигурация системы (/etc, fstab с tmpfs, sysctl, udev, modprobe, systemd)"
 mkdir -p \
-    "$DEST/boot" "$DEST/tmp" "$DEST/var/tmp" "$DEST/var/log" \
-    "$DEST/etc/sysctl.d" "$DEST/etc/tmpfiles.d" "$DEST/etc/udev/rules.d" \
+    "$DEST/boot" "$DEST/mnt/share" "$DEST/tmp" "$DEST/var/tmp" "$DEST/var/log" \
+    "$DEST/etc/default" "$DEST/etc/sysctl.d" "$DEST/etc/tmpfiles.d" "$DEST/etc/udev/rules.d" \
     "$DEST/etc/modprobe.d" "$DEST/etc/modules-load.d" "$DEST/etc/profile.d" \
-    "$DEST/etc/informer701" "$DEST/etc/wifi/networks.d" "$DEST/etc/dropbear"
+    "$DEST/etc/informer701" "$DEST/etc/informer701-wifi/profiles" "$DEST/etc/wifi/networks.d" "$DEST/etc/dropbear"
 chmod 1777 "$DEST/tmp" "$DEST/var/tmp"
-chmod 0700 "$DEST/etc/wifi" "$DEST/etc/wifi/networks.d"
+chmod 0700 "$DEST/etc/wifi" "$DEST/etc/wifi/networks.d" "$DEST/etc/informer701-wifi" "$DEST/etc/informer701-wifi/profiles"
+ln -sfn /mnt/share "$DEST/root/share"
+
+cat > "$DEST/etc/default/locale" <<'EOF'
+LANG=C.UTF-8
+EOF
 
 install -m 0644 "$RF/etc/fstab" "$DEST/etc/fstab"
 install -m 0644 "$RF/etc/sysctl.d/90-informer701.conf" "$DEST/etc/sysctl.d/90-informer701.conf"
@@ -312,20 +317,20 @@ cat > "$DEST/etc/motd" <<EOF
  Debian 12 (Bookworm) armhf / systemd / Linux $KREL ($BUILD_ID)
 ====================================================================
  Быстрые команды:
-   info       сводка по плате, памяти, zram, watchdog и PMIC
-   diag       полный отчёт (частоты, AXP209, dmesg, разделы)
-   savelog    сохранить diag + journalctl на FAT-раздел /boot/logs/
-   usbnet     сеть по micro-USB OTG (192.168.77.1, SSH, DHCP)
-   wifi       управление Wi-Fi (scan, up, ap, share, status, selftest)
-   pkg        менеджер пакетов (обёртка над apt / dpkg)
-   accel      акселерометр MMA7660 (read, watch, level, info)
-   pmic-vbus  контроль напряжения питания 5 В через АЦП AXP209
-   wdt        статус аппаратного сторожевого таймера (/dev/watchdog)
-   bootnext   безопасный выбор варианта DTB на одну загрузку
+   rootfs-expand  расширить rootfs + создать общий раздел для Windows (/mnt/share)
+   wifi-config    конфигуратор Wi-Fi адаптеров (клиент STA + точка доступа AP)
+   wifi           управление Wi-Fi (scan, connect, ap, status, selftest)
+   usbnet         сеть по micro-USB OTG (192.168.77.1, SSH, DHCP)
+   pkg            менеджер пакетов (apt / dpkg, /mnt/share/deb, /boot/deb)
+   info / diag    сводка и полный отчёт по плате, частотам, PMIC и разделам
+   savelog        сохранить отчёт в /boot/logs/ и /mnt/share/logs/
+   accel          акселерометр MMA7660 (read, watch, level, info)
+   pmic-vbus      контроль напряжения питания 5 В через АЦП AXP209
+   wdt / bootnext сторожевой таймер (/dev/watchdog) и разовый выбор DTB
 ====================================================================
 EOF
 
-echo "[rootfs] 7/7 настройка юнитов systemd, zram, watchdog, dropbear, usbnet, wifi"
+echo "[rootfs] 7/7 настройка юнитов systemd, zram, watchdog, dropbear, usbnet, wifi, share"
 mkdir -p \
     "$DEST/etc/systemd/system.conf.d" \
     "$DEST/etc/systemd/journald.conf.d" \
@@ -347,6 +352,7 @@ install -m 0644 "$RF/systemd/haveged-override.conf" \
 for unit in \
     informer701-zram.service \
     informer701-bootonce.service \
+    informer701-share.service \
     dropbear.service \
     informer701-usbnet.service \
     informer701-wifi.service
@@ -359,6 +365,8 @@ ln -sf /etc/systemd/system/informer701-zram.service \
     "$DEST/etc/systemd/system/sysinit.target.wants/informer701-zram.service"
 ln -sf /etc/systemd/system/informer701-bootonce.service \
     "$DEST/etc/systemd/system/multi-user.target.wants/informer701-bootonce.service"
+ln -sf /etc/systemd/system/informer701-share.service \
+    "$DEST/etc/systemd/system/multi-user.target.wants/informer701-share.service"
 ln -sf /etc/systemd/system/dropbear.service \
     "$DEST/etc/systemd/system/multi-user.target.wants/dropbear.service"
 ln -sf /etc/systemd/system/informer701-usbnet.service \

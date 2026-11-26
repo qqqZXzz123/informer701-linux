@@ -65,6 +65,9 @@ trap cleanup EXIT
 
 echo "=== [1/3] подготовка разреженной копии образа ($IMG_XZ -> $QIMG) ==="
 xz -dc "$IMG_XZ" | cp --sparse=always /dev/stdin "$QIMG"
+# Расширяем разреженную тестовую SD-карту до 1024 МиБ (степень двойки для QEMU if=sd),
+# чтобы проверить онлайн-работу rootfs-expand + создание общего exFAT раздела /mnt/share.
+truncate -s 1024M "$QIMG"
 
 # Смещение второго раздела (rootfs ext4) = 65 МиБ = 68157440 байт
 ROOT_OFFSET=$((65 * 1024 * 1024))

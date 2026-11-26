@@ -1,0 +1,131 @@
+#!/bin/bash
+# /usr/local/sbin/informer701-share-mount
+# Автоматическое монтирование общего с Windows/ПК раздела SD-карты (/dev/mmcblk0p3)
+# в /mnt/share (и симлинк /root/share). Автоматически распознаёт exFAT, FAT32 (vFAT)
+# и NTFS даже если раздел был переформатирован на ПК в Windows.
+set -uo pipefail
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+MP="${SHARE_MP:-/mnt/share}"
+LINK="/root/share"
+
+detect_share_dev() {
+    if [ -n "${SHARE_DEV:-}" ]; then
+        echo "$SHARE_DEV"
+        return 0
+    fi
+    if [ -b /dev/mmcblk0p3 ]; then
+        echo /dev/mmcblk0p3
+        return 0
+    fi
+    # На случай нестандартного корневого блочного устройства (например loopXp3)
+    local root_src
+    root_src=$(findmnt -n -o SOURCE / 2>/dev/null || true)
+    case "$root_src" in
+        /dev/mmcblk[0-9]p2) echo "${root_src%p2}p3"; return 0 ;;
+        /dev/loop[0-9]*p2)  echo "${root_src%p2}p3"; return 0 ;;
+        /dev/sd[a-z]2)      echo "${root_src%2}3"; return 0 ;;
+    esac
+    echo /dev/mmcblk0p3
+}
+
+do_start() {
+    local dev fstype opts=""
+    dev=$(detect_share_dev)
+    mkdir -p "$MP"
+    if [ -d /root ] && [ ! -e "$LINK" ] && [ ! -L "$LINK" ]; then
+        ln -s "$MP" "$LINK" 2>/dev/null || true
+    fi
+
+    if mountpoint -q "$MP" 2>/dev/null; then
+        echo "[share] $MP уже смонтирован"
+        return 0
+    fi
+
+    if [ ! -b "$dev" ]; then
+        echo "[share] дополнительный раздел $dev не создан (создать: rootfs-expand)"
+        return 0
+    fi
+
+    fstype=$(blkid -s TYPE -o value "$dev" 2>/dev/null || true)
+    if [ -z "$fstype" ]; then
+        # Повторное чтение после udev
+        udevadm settle --timeout=3 2>/dev/null || true
+        fstype=$(blkid -s TYPE -o value "$dev" 2>/dev/null || true)
+    fi
+
+    case "$fstype" in
+        exfat)
+            modprobe -q exfat 2>/dev/null || true
+            if command -v fsck.exfat >/dev/null 2>&1; then
+                fsck.exfat -p "$dev" >/dev/null 2>&1 || true
+            fi
+            opts="rw,noatime,iocharset=utf8,uid=0,gid=0,fmask=0022,dmask=0022"
+            mount -t exfat -o "$opts" "$dev" "$MP"
+            ;;
+        vfat|fat|msdos)
+            if command -v fsck.fat >/dev/null 2>&1; then
+                fsck.fat -a "$dev" >/dev/null 2>&1 || true
+            fi
+            opts="rw,noatime,utf8,shortname=mixed,uid=0,gid=0,fmask=0022,dmask=0022,errors=remount-ro"
+            mount -t vfat -o "$opts" "$dev" "$MP" \
+                || mount -t vfat -o "rw,noatime,shortname=mixed,fmask=0022,dmask=0022" "$dev" "$MP"
+            ;;
+        ntfs|ntfs3)
+            modprobe -q ntfs3 2>/dev/null || true
+            opts="rw,noatime,iocharset=utf8,uid=0,gid=0,fmask=0022,dmask=0022,force"
+            mount -t ntfs3 -o "$opts" "$dev" "$MP"
+            ;;
+        "")
+            echo "[share] ВНИМАНИЕ: на $dev не распознана файловая система (отформатировать: rootfs-expand)" >&2
+            return 0
+            ;;
+        *)
+            mount -o rw,noatime "$dev" "$MP"
+            ;;
+    esac
+
+    if mountpoint -q "$MP" 2>/dev/null; then
+        mkdir -p "$MP/files" "$MP/logs" "$MP/deb" 2>/dev/null || true
+        if [ -d /root ]; then
+            ln -sfn "$MP" "$LINK" 2>/dev/null || true
+        fi
+        echo "[share] смонтирован $dev (${fstype:-auto}) -> $MP (симлинк $LINK)"
+        return 0
+    fi
+
+    echo "[share] ВНИМАНИЕ: не удалось смонтировать $dev ($fstype) в $MP" >&2
+    return 0
+}
+
+do_stop() {
+    if mountpoint -q "$MP" 2>/dev/null; then
+        sync
+        umount "$MP" 2>/dev/null || umount -l "$MP" 2>/dev/null || true
+        echo "[share] размонтирован $MP"
+    fi
+    return 0
+}
+
+case "${1:-start}" in
+    start|mount)   do_start ;;
+    stop|umount)   do_stop ;;
+    restart)       do_stop; do_start ;;
+    status)
+        dev=$(detect_share_dev)
+        if mountpoint -q "$MP" 2>/dev/null; then
+            findmnt "$MP"
+            df -h "$MP"
+        elif [ -b "$dev" ]; then
+            echo "[share] раздел $dev существует ($(blkid "$dev" 2>/dev/null || echo 'без ФС')), но не смонтирован в $MP"
+        else
+            echo "[share] раздел $dev пока не создан (запустите rootfs-expand)"
+        fi
+        ;;
+    *)
+        echo "использование: $0 {start|stop|restart|status}" >&2
+        exit 1
+        ;;
+esac

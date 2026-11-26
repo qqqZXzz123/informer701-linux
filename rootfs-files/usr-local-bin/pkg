@@ -249,15 +249,22 @@ cmd_baked() {
 
 cmd_local() {
     need_root
-    local d="${1:-$DEBDIR}"
-    [ -d "$d" ] || die "каталога $d нет (раздел BOOT примонтирован? mount | grep /boot)"
+    local d="${1:-}"
+    local files=()
     shopt -s nullglob
-    local files=("$d"/*.deb)
+    if [ -n "$d" ]; then
+        [ -d "$d" ] || die "каталога $d нет"
+        files=("$d"/*.deb)
+    else
+        # Ищем пакеты .deb и в /mnt/share/deb (общий с Windows раздел), и в /boot/deb
+        [ -d /mnt/share/deb ] && files+=(/mnt/share/deb/*.deb)
+        [ -d "$DEBDIR" ]      && files+=("$DEBDIR"/*.deb)
+    fi
     shopt -u nullglob
-    [ "${#files[@]}" -gt 0 ] || die "в $d нет файлов .deb"
-    ok "устанавливаю локальные пакеты из $d:"
+    [ "${#files[@]}" -gt 0 ] || die "нет файлов .deb ни в /mnt/share/deb, ни в $DEBDIR"
+    ok "устанавливаю локальные пакеты (${#files[@]} шт.):"
     for f in "${files[@]}"; do
-        say "  $(basename "$f") ($(du -h "$f" | cut -f1))"
+        say "  $f ($(du -h "$f" | cut -f1))"
     done
     if dpkg -i "${files[@]}"; then
         ok "локальные пакеты установлены"
@@ -313,7 +320,7 @@ cmd_cache() {
 
 cmd_space() {
     say "=== дисковое пространство и память ==="
-    df -h / /boot /tmp /var/tmp /var/log 2>/dev/null | sed 's/^/  /'
+    df -h / /boot /mnt/share /tmp /var/tmp /var/log 2>/dev/null | sed 's/^/  /'
     say ""
     say "=== ОЗУ и сжатый swap (zram) ==="
     free -h 2>/dev/null | sed 's/^/  /'

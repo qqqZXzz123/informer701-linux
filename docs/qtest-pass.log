@@ -29,377 +29,375 @@
 [    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=1
 [    0.000000] NR_IRQS: 16, nr_irqs: 16, preallocated irqs: 16
 [    0.000000] rcu: srcu_init: Setting srcu_struct sizes based on contention.
-[    0.000207] sched_clock: 32 bits at 24MHz, resolution 41ns, wraps every 89478484971ns
-[    0.000816] clocksource: timer: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 79635851949 ns
-[    0.012157] Console: colour dummy device 80x30
-[    0.017913] Calibrating delay loop... 910.13 BogoMIPS (lpj=4550656)
-[    0.143231] CPU: Testing write buffer coherency: ok
-[    0.145053] CPU0: Spectre v2: firmware did not set auxiliary control register IBE bit, system vulnerable
-[    0.145151] pid_max: default: 32768 minimum: 301
-[    0.148238] Mount-cache hash table entries: 1024 (order: 0, 4096 bytes, linear)
-[    0.148312] Mountpoint-cache hash table entries: 1024 (order: 0, 4096 bytes, linear)
-[    0.172631] CPU0: thread -1, cpu 0, socket -1, mpidr 0
-[    0.186281] Setting up static identity map for 0x40100000 - 0x40100060
-[    0.187607] rcu: Hierarchical SRCU implementation.
-[    0.187652] rcu: 	Max phase no-delay instances is 1000.
-[    0.191290] smp: Bringing up secondary CPUs ...
-[    0.191998] smp: Brought up 1 node, 1 CPU
-[    0.192084] SMP: Total of 1 processors activated (910.13 BogoMIPS).
-[    0.192114] CPU: All CPU(s) started in SVC mode.
-[    0.208235] devtmpfs: initialized
-[    0.224614] VFP support v0.3: implementor 41 architecture 3 part 30 variant c rev 0
-[    0.246962] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 19112604462750000 ns
-[    0.247851] futex hash table entries: 256 (order: 2, 16384 bytes, linear)
-[    0.257191] pinctrl core: initialized pinctrl subsystem
-[    0.298268] NET: Registered PF_NETLINK/PF_ROUTE protocol family
-[    0.314834] DMA: preallocated 256 KiB pool for atomic coherent allocations
-[    0.320397] thermal_sys: Registered thermal governor 'step_wise'
-[    0.321175] hw-breakpoint: debug architecture 0x4 unsupported.
-[    0.360064] platform 1e40000.display-backend: Fixed dependency cycle(s) with /soc/lcd-controller@1c0d000/ports/port@0/endpoint@1
-[    0.360464] platform 1e40000.display-backend: Fixed dependency cycle(s) with /soc/lcd-controller@1c0c000/ports/port@0/endpoint@1
-[    0.360515] platform 1e40000.display-backend: Fixed dependency cycle(s) with /soc/display-frontend@1e20000/ports/port@1/endpoint@1
-[    0.360560] platform 1e40000.display-backend: Fixed dependency cycle(s) with /soc/display-frontend@1e00000/ports/port@1/endpoint@1
-[    0.361048] platform 1e60000.display-backend: Fixed dependency cycle(s) with /soc/lcd-controller@1c0d000/ports/port@0/endpoint@0
-[    0.361128] platform 1e60000.display-backend: Fixed dependency cycle(s) with /soc/lcd-controller@1c0c000/ports/port@0/endpoint@0
-[    0.361193] platform 1e60000.display-backend: Fixed dependency cycle(s) with /soc/display-frontend@1e20000/ports/port@1/endpoint@0
-[    0.361255] platform 1e60000.display-backend: Fixed dependency cycle(s) with /soc/display-frontend@1e00000/ports/port@1/endpoint@0
-[    0.376251] SCSI subsystem initialized
-[    0.377204] usbcore: registered new interface driver usbfs
-[    0.377443] usbcore: registered new interface driver hub
-[    0.377636] usbcore: registered new device driver usb
-[    0.378325] pps_core: LinuxPPS API ver. 1 registered
-[    0.378349] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
-[    0.378453] PTP clock support registered
-[    0.407102] clocksource: Switched to clocksource timer
-[    0.437824] NET: Registered PF_INET protocol family
-[    0.440083] IP idents hash table entries: 8192 (order: 4, 65536 bytes, linear)
-[    0.447282] tcp_listen_portaddr_hash hash table entries: 512 (order: 0, 4096 bytes, linear)
-[    0.447653] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
-[    0.447883] TCP established hash table entries: 4096 (order: 2, 16384 bytes, linear)
-[    0.448257] TCP bind hash table entries: 4096 (order: 4, 65536 bytes, linear)
-[    0.448684] TCP: Hash tables configured (established 4096 bind 4096)
-[    0.451424] UDP hash table entries: 256 (order: 1, 8192 bytes, linear)
-[    0.451853] UDP-Lite hash table entries: 256 (order: 1, 8192 bytes, linear)
-[    0.454047] NET: Registered PF_UNIX/PF_LOCAL protocol family
-[    0.484306] hw perfevents: enabled with armv7_cortex_a8 PMU driver, 5 counters available
-[    0.489892] Initialise system trusted keyrings
-[    0.538388] workingset: timestamp_bits=30 max_order=17 bucket_order=0
-[    0.542689] Key type asymmetric registered
-[    0.542887] Asymmetric key parser 'x509' registered
-[    0.543621] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 248)
-[    0.543932] io scheduler mq-deadline registered
-[    0.544083] io scheduler kyber registered
-[    0.544272] io scheduler bfq registered
-[    1.649508] Serial: 8250/16550 driver, 8 ports, IRQ sharing disabled
-[    1.768579] loop: module loaded
-[    1.774725] tun: Universal TUN/TAP device driver, 1.6
-[    1.814335] usbcore: registered new interface driver catc
-[    1.814472] usbcore: registered new interface driver kaweth
-[    1.814548] usbcore: registered new interface driver asix
-[    1.814618] usbcore: registered new interface driver ax88179_178a
-[    1.814688] usbcore: registered new interface driver cdc_ether
-[    1.814755] usbcore: registered new interface driver rndis_host
-[    1.815615] usbcore: registered new interface driver cdc_ncm
-[    1.815730] usbcore: registered new interface driver aqc111
-[    1.830120] usbcore: registered new interface driver uas
-[    1.830385] usbcore: registered new interface driver usb-storage
-[    1.830914] usbcore: registered new interface driver usbserial_generic
-[    1.831203] usbserial: USB Serial support registered for generic
-[    1.831398] usbcore: registered new interface driver ch341
-[    1.831452] usbserial: USB Serial support registered for ch341-uart
-[    1.831527] usbcore: registered new interface driver cp210x
-[    1.831661] usbserial: USB Serial support registered for cp210x
-[    1.831842] usbcore: registered new interface driver ftdi_sio
-[    1.831934] usbserial: USB Serial support registered for FTDI USB Serial Device
-[    1.832053] usbcore: registered new interface driver pl2303
-[    1.832105] usbserial: USB Serial support registered for pl2303
-[    1.862068] sunxi-rtc 1c20d00.rtc: registered as rtc0
-[    1.863570] sunxi-rtc 1c20d00.rtc: setting system clock to 2026-11-26T05:35:45 UTC (1795671345)
-[    1.865783] i2c_dev: i2c /dev entries driver
-[    1.883502] sunxi-wdt 1c20c90.watchdog: Watchdog enabled (timeout=16 sec, nowayout=0)
-[    1.891374] sun4i-ss 1c15000.crypto-engine: no reset control found
-[    1.893471] sun4i-ss 1c15000.crypto-engine: Clock bus 12000000 (12 MHz) (must be >= 24000000)
-[    1.893559] sun4i-ss 1c15000.crypto-engine: Clock ss is at 600000000 (600 MHz) (must be <= 150000000)
-[    1.894104] sun4i-ss 1c15000.crypto-engine: Die ID 0
-[    1.897565] usbcore: registered new interface driver usbhid
-[    1.897618] usbhid: USB HID core driver
-[    1.901343] NET: Registered PF_INET6 protocol family
-[    1.943517] Segment Routing with IPv6
-[    1.943830] In-situ OAM (IOAM) with IPv6
-[    1.944378] sit: IPv6, IPv4 and MPLS over IPv4 tunneling driver
-[    1.948763] NET: Registered PF_PACKET protocol family
-[    1.949205] 8021q: 802.1Q VLAN Support v1.8
-[    1.949597] Key type dns_resolver registered
-[    1.949900] Registering SWP/SWPB emulation handler
-[    1.961388] Loading compiled-in X.509 certificates
-[    2.077596] gpio gpiochip0: Static allocation of GPIO base is deprecated, use dynamic allocation.
-[    2.097984] sun4i-pinctrl 1c20800.pinctrl: initialized sunXi PIO driver
-[    2.101213] sun4i-pinctrl 1c20800.pinctrl: supply vcc-pb not found, using dummy regulator
-[    2.116274] printk: console [ttyS0] disabled
-[    2.142154] 1c28000.serial: ttyS0 at MMIO 0x1c28000 (irq = 53, base_baud = 1500000) is a 16550A
-[    2.145209] printk: console [ttyS0] enabled
-[    4.246367] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-[    4.247462] mma7660 1-004c: failed to read sensor mode
-[    4.248809] mma7660: probe of 1-004c failed with error -110
-[    4.271967] sun4i-pinctrl 1c20800.pinctrl: supply vcc-pf not found, using dummy regulator
-[    4.282540] sun4i-pinctrl 1c20800.pinctrl: supply vcc-ph not found, using dummy regulator
-[    4.314908] usb_phy_generic usb_phy_generic.0.auto: dummy supplies not allowed for exclusive requests
-[    4.324094] ------------[ cut here ]------------
-[    4.324560] WARNING: CPU: 0 PID: 1056 at drivers/usb/musb/sunxi.c:406 sunxi_musb_ep_offset+0x4c/0x54
-[    4.326614] sunxi_musb_ep_offset called with non 0 offset
-[    4.326996] Modules linked in:
-[    4.327560] CPU: 0 PID: 1056 Comm: kworker/u2:9 Not tainted 6.6.0 #1
-[    4.328118] Hardware name: Allwinner sun4i/sun5i Families
-[    4.328783] Workqueue: events_unbound deferred_probe_work_func
-[    4.330236]  unwind_backtrace from show_stack+0x10/0x14
-[    4.330658]  show_stack from dump_stack_lvl+0x40/0x4c
-[    4.330989]  dump_stack_lvl from __warn+0x84/0xc8
-[    4.331269]  __warn from warn_slowpath_fmt+0x124/0x190
-[    4.331649]  warn_slowpath_fmt from sunxi_musb_ep_offset+0x4c/0x54
-[    4.332050]  sunxi_musb_ep_offset from ep_config_from_hw+0xcc/0x150
-[    4.332355]  ep_config_from_hw from musb_probe+0xa08/0xcd8
-[    4.332624]  musb_probe from platform_probe+0x5c/0xb0
-[    4.332882]  platform_probe from really_probe+0xc8/0x2d8
-[    4.333200]  really_probe from __driver_probe_device+0x88/0x19c
-[    4.333461]  __driver_probe_device from driver_probe_device+0x30/0x104
-[    4.333764]  driver_probe_device from __device_attach_driver+0x94/0x108
-[    4.334067]  __device_attach_driver from bus_for_each_drv+0x90/0xe4
-[    4.334262]  bus_for_each_drv from __device_attach+0xa8/0x1a4
-[    4.334420]  __device_attach from bus_probe_device+0x88/0x8c
-[    4.334583]  bus_probe_device from device_add+0x5dc/0x7a8
-[    4.334728]  device_add from platform_device_add+0xec/0x1fc
-[    4.335007]  platform_device_add from platform_device_register_full+0x104/0x154
-[    4.335221]  platform_device_register_full from sunxi_musb_probe+0x218/0x3c0
-[    4.335419]  sunxi_musb_probe from platform_probe+0x5c/0xb0
-[    4.335582]  platform_probe from really_probe+0xc8/0x2d8
-[    4.335735]  really_probe from __driver_probe_device+0x88/0x19c
-[    4.335981]  __driver_probe_device from driver_probe_device+0x30/0x104
-[    4.336169]  driver_probe_device from __device_attach_driver+0x94/0x108
-[    4.336349]  __device_attach_driver from bus_for_each_drv+0x90/0xe4
-[    4.336555]  bus_for_each_drv from __device_attach+0xa8/0x1a4
-[    4.336722]  __device_attach from bus_probe_device+0x88/0x8c
-[    4.336881]  bus_probe_device from deferred_probe_work_func+0x78/0xa4
-[    4.337104]  deferred_probe_work_func from process_one_work+0x154/0x2ac
-[    4.337297]  process_one_work from worker_thread+0x290/0x4e8
-[    4.337457]  worker_thread from kthread+0xe0/0xfc
-[    4.337599]  kthread from ret_from_fork+0x14/0x28
-[    4.337846] Exception stack(0xe0dbdfb0 to 0xe0dbdff8)
-[    4.338122] dfa0:                                     00000000 00000000 00000000 00000000
-[    4.338347] dfc0: 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
-[    4.338562] dfe0: 00000000 00000000 00000000 00000000 00000013 00000000
-[    4.339242] ---[ end trace 0000000000000000 ]---
-[    4.339584] musb-sunxi 1c13000.usb: Error unknown readb offset 128
-[    4.341976] musb-hdrc musb-hdrc.1.auto: error -EINVAL: musb_init_controller failed
-[    4.342436] musb-hdrc: probe of musb-hdrc.1.auto failed with error -22
-[    4.365886] ehci-platform 1c14000.usb: EHCI Host Controller
-[    4.366569] ehci-platform 1c14000.usb: new USB bus registered, assigned bus number 1
-[    4.369532] ehci-platform 1c1c000.usb: EHCI Host Controller
-[    4.369761] ehci-platform 1c1c000.usb: new USB bus registered, assigned bus number 2
-[    4.371611] ohci-platform 1c14400.usb: Generic Platform OHCI controller
-[    4.371900] ohci-platform 1c14400.usb: new USB bus registered, assigned bus number 3
-[    4.374682] ohci-platform 1c1c400.usb: Generic Platform OHCI controller
-[    4.375450] ohci-platform 1c1c400.usb: new USB bus registered, assigned bus number 4
-[    4.379564] ehci-platform 1c1c000.usb: irq 60, io mem 0x01c1c000
-[    4.381512] sunxi-mmc 1c0f000.mmc: initialized, max. request size: 2048 KB
-[    4.388261] ohci-platform 1c1c400.usb: irq 62, io mem 0x01c1c400
-[    4.390572] ohci-platform 1c14400.usb: irq 61, io mem 0x01c14400
-[    4.391240] ehci-platform 1c14000.usb: irq 59, io mem 0x01c14000
-[    4.393652] clk: Disabling unused clocks
-[    4.407106] mmc0: host does not support reading read-only switch, assuming write-enable
-[    4.408761] mmc0: new high speed SD card at address 868e
-[    4.411517] ehci-platform 1c1c000.usb: USB 2.0 started, EHCI 1.00
-[    4.417301] usb usb2: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 6.06
-[    4.417553] usb usb2: New USB device strings: Mfr=3, Product=2, SerialNumber=1
-[    4.417712] usb usb2: Product: EHCI Host Controller
-[    4.417832] usb usb2: Manufacturer: Linux 6.6.0 ehci_hcd
-[    4.417998] usb usb2: SerialNumber: 1c1c000.usb
-[    4.423681] hub 2-0:1.0: USB hub found
-[    4.428265] mmcblk0: mmc0:868e QEMU! 512 MiB
-[    4.431218] hub 2-0:1.0: 6 ports detected
-[    4.447627] ehci-platform 1c14000.usb: USB 2.0 started, EHCI 1.00
-[    4.464399] usb usb1: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 6.06
-[    4.465410] usb usb1: New USB device strings: Mfr=3, Product=2, SerialNumber=1
-[    4.465748] usb usb1: Product: EHCI Host Controller
-[    4.465952] usb usb1: Manufacturer: Linux 6.6.0 ehci_hcd
-[    4.466139] usb usb1: SerialNumber: 1c14000.usb
-[    4.469504]  mmcblk0: p1 p2
-[    4.475648] hub 1-0:1.0: USB hub found
-[    4.492220] hub 1-0:1.0: 6 ports detected
-[    4.497870] usb usb4: New USB device found, idVendor=1d6b, idProduct=0001, bcdDevice= 6.06
-[    4.498167] usb usb4: New USB device strings: Mfr=3, Product=2, SerialNumber=1
-[    4.498349] usb usb4: Product: Generic Platform OHCI controller
-[    4.498470] usb usb4: Manufacturer: Linux 6.6.0 ohci_hcd
-[    4.498605] usb usb4: SerialNumber: 1c1c400.usb
-[    4.501067] hub 4-0:1.0: USB hub found
-[    4.502278] hub 4-0:1.0: 3 ports detected
-[    4.505313] usb usb3: New USB device found, idVendor=1d6b, idProduct=0001, bcdDevice= 6.06
-[    4.505530] usb usb3: New USB device strings: Mfr=3, Product=2, SerialNumber=1
-[    4.505672] usb usb3: Product: Generic Platform OHCI controller
-[    4.505787] usb usb3: Manufacturer: Linux 6.6.0 ohci_hcd
-[    4.505891] usb usb3: SerialNumber: 1c14400.usb
-[    4.511560] hub 3-0:1.0: USB hub found
-[    4.513169] hub 3-0:1.0: 3 ports detected
-[    4.590590] EXT4-fs (mmcblk0p2): mounted filesystem 8f1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8 r/w with ordered data mode. Quota mode: disabled.
-[    4.593012] VFS: Mounted root (ext4 filesystem) on device 179:2.
-[    4.598415] devtmpfs: mounted
-[    4.625310] Freeing unused kernel image (initmem) memory: 1024K
-[    4.637668] Run /sbin/init as init process
-[    7.698347] systemd[1]: Failed to find module 'autofs4'
-[    8.506828] systemd[1]: systemd 252.39-1~deb12u2 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR +IMA +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD -BPF_FRAMEWORK -XKBCOMMON +UTMP +SYSVINIT default-hierarchy=unified)
-[    8.508250] systemd[1]: Detected architecture arm.
+[    0.000215] sched_clock: 32 bits at 24MHz, resolution 41ns, wraps every 89478484971ns
+[    0.000734] clocksource: timer: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 79635851949 ns
+[    0.022274] Console: colour dummy device 80x30
+[    0.025572] Calibrating delay loop... 941.67 BogoMIPS (lpj=4708352)
+[    0.282719] CPU: Testing write buffer coherency: ok
+[    0.284163] CPU0: Spectre v2: firmware did not set auxiliary control register IBE bit, system vulnerable
+[    0.284276] pid_max: default: 32768 minimum: 301
+[    0.286899] Mount-cache hash table entries: 1024 (order: 0, 4096 bytes, linear)
+[    0.286963] Mountpoint-cache hash table entries: 1024 (order: 0, 4096 bytes, linear)
+[    0.310820] CPU0: thread -1, cpu 0, socket -1, mpidr 0
+[    0.320908] Setting up static identity map for 0x40100000 - 0x40100060
+[    0.322123] rcu: Hierarchical SRCU implementation.
+[    0.322187] rcu: 	Max phase no-delay instances is 1000.
+[    0.326102] smp: Bringing up secondary CPUs ...
+[    0.326756] smp: Brought up 1 node, 1 CPU
+[    0.326838] SMP: Total of 1 processors activated (941.67 BogoMIPS).
+[    0.326868] CPU: All CPU(s) started in SVC mode.
+[    0.338868] devtmpfs: initialized
+[    0.354078] VFP support v0.3: implementor 41 architecture 3 part 30 variant c rev 0
+[    0.375303] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 19112604462750000 ns
+[    0.376060] futex hash table entries: 256 (order: 2, 16384 bytes, linear)
+[    0.384911] pinctrl core: initialized pinctrl subsystem
+[    0.421449] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[    0.435198] DMA: preallocated 256 KiB pool for atomic coherent allocations
+[    0.439263] thermal_sys: Registered thermal governor 'step_wise'
+[    0.439766] hw-breakpoint: debug architecture 0x4 unsupported.
+[    0.470075] platform 1e40000.display-backend: Fixed dependency cycle(s) with /soc/lcd-controller@1c0d000/ports/port@0/endpoint@1
+[    0.470494] platform 1e40000.display-backend: Fixed dependency cycle(s) with /soc/lcd-controller@1c0c000/ports/port@0/endpoint@1
+[    0.470544] platform 1e40000.display-backend: Fixed dependency cycle(s) with /soc/display-frontend@1e20000/ports/port@1/endpoint@1
+[    0.470596] platform 1e40000.display-backend: Fixed dependency cycle(s) with /soc/display-frontend@1e00000/ports/port@1/endpoint@1
+[    0.471055] platform 1e60000.display-backend: Fixed dependency cycle(s) with /soc/lcd-controller@1c0d000/ports/port@0/endpoint@0
+[    0.471130] platform 1e60000.display-backend: Fixed dependency cycle(s) with /soc/lcd-controller@1c0c000/ports/port@0/endpoint@0
+[    0.471223] platform 1e60000.display-backend: Fixed dependency cycle(s) with /soc/display-frontend@1e20000/ports/port@1/endpoint@0
+[    0.471292] platform 1e60000.display-backend: Fixed dependency cycle(s) with /soc/display-frontend@1e00000/ports/port@1/endpoint@0
+[    0.486105] SCSI subsystem initialized
+[    0.487021] usbcore: registered new interface driver usbfs
+[    0.487306] usbcore: registered new interface driver hub
+[    0.487488] usbcore: registered new device driver usb
+[    0.488087] pps_core: LinuxPPS API ver. 1 registered
+[    0.488108] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    0.488216] PTP clock support registered
+[    0.513332] clocksource: Switched to clocksource timer
+[    0.544685] NET: Registered PF_INET protocol family
+[    0.546685] IP idents hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[    0.551257] tcp_listen_portaddr_hash hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.551468] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    0.551567] TCP established hash table entries: 4096 (order: 2, 16384 bytes, linear)
+[    0.551815] TCP bind hash table entries: 4096 (order: 4, 65536 bytes, linear)
+[    0.552016] TCP: Hash tables configured (established 4096 bind 4096)
+[    0.554222] UDP hash table entries: 256 (order: 1, 8192 bytes, linear)
+[    0.554526] UDP-Lite hash table entries: 256 (order: 1, 8192 bytes, linear)
+[    0.556002] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    0.574341] hw perfevents: enabled with armv7_cortex_a8 PMU driver, 5 counters available
+[    0.578090] Initialise system trusted keyrings
+[    0.603683] workingset: timestamp_bits=30 max_order=17 bucket_order=0
+[    0.606498] Key type asymmetric registered
+[    0.606596] Asymmetric key parser 'x509' registered
+[    0.606956] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 248)
+[    0.607130] io scheduler mq-deadline registered
+[    0.607224] io scheduler kyber registered
+[    0.607345] io scheduler bfq registered
+[    1.253987] Serial: 8250/16550 driver, 8 ports, IRQ sharing disabled
+[    1.350763] loop: module loaded
+[    1.356548] tun: Universal TUN/TAP device driver, 1.6
+[    1.397760] usbcore: registered new interface driver catc
+[    1.397933] usbcore: registered new interface driver kaweth
+[    1.398007] usbcore: registered new interface driver asix
+[    1.398074] usbcore: registered new interface driver ax88179_178a
+[    1.398140] usbcore: registered new interface driver cdc_ether
+[    1.398239] usbcore: registered new interface driver rndis_host
+[    1.398372] usbcore: registered new interface driver cdc_ncm
+[    1.398438] usbcore: registered new interface driver aqc111
+[    1.407992] usbcore: registered new interface driver uas
+[    1.408236] usbcore: registered new interface driver usb-storage
+[    1.408644] usbcore: registered new interface driver usbserial_generic
+[    1.408842] usbserial: USB Serial support registered for generic
+[    1.408985] usbcore: registered new interface driver ch341
+[    1.409030] usbserial: USB Serial support registered for ch341-uart
+[    1.409091] usbcore: registered new interface driver cp210x
+[    1.409206] usbserial: USB Serial support registered for cp210x
+[    1.409280] usbcore: registered new interface driver ftdi_sio
+[    1.409339] usbserial: USB Serial support registered for FTDI USB Serial Device
+[    1.409404] usbcore: registered new interface driver pl2303
+[    1.409452] usbserial: USB Serial support registered for pl2303
+[    1.427013] sunxi-rtc 1c20d00.rtc: registered as rtc0
+[    1.428051] sunxi-rtc 1c20d00.rtc: setting system clock to 2026-11-26T08:52:37 UTC (1795683157)
+[    1.428835] i2c_dev: i2c /dev entries driver
+[    1.437436] sunxi-wdt 1c20c90.watchdog: Watchdog enabled (timeout=16 sec, nowayout=0)
+[    1.443244] sun4i-ss 1c15000.crypto-engine: no reset control found
+[    1.445149] sun4i-ss 1c15000.crypto-engine: Clock bus 12000000 (12 MHz) (must be >= 24000000)
+[    1.445259] sun4i-ss 1c15000.crypto-engine: Clock ss is at 600000000 (600 MHz) (must be <= 150000000)
+[    1.445729] sun4i-ss 1c15000.crypto-engine: Die ID 0
+[    1.448458] usbcore: registered new interface driver usbhid
+[    1.448489] usbhid: USB HID core driver
+[    1.452123] NET: Registered PF_INET6 protocol family
+[    1.481407] Segment Routing with IPv6
+[    1.481736] In-situ OAM (IOAM) with IPv6
+[    1.482298] sit: IPv6, IPv4 and MPLS over IPv4 tunneling driver
+[    1.485715] NET: Registered PF_PACKET protocol family
+[    1.486126] 8021q: 802.1Q VLAN Support v1.8
+[    1.486542] Key type dns_resolver registered
+[    1.486811] Registering SWP/SWPB emulation handler
+[    1.497621] Loading compiled-in X.509 certificates
+[    1.607535] gpio gpiochip0: Static allocation of GPIO base is deprecated, use dynamic allocation.
+[    1.628613] sun4i-pinctrl 1c20800.pinctrl: initialized sunXi PIO driver
+[    1.632300] sun4i-pinctrl 1c20800.pinctrl: supply vcc-pb not found, using dummy regulator
+[    1.646507] printk: console [ttyS0] disabled
+[    1.674797] 1c28000.serial: ttyS0 at MMIO 0x1c28000 (irq = 53, base_baud = 1500000) is a 16550A
+[    1.677677] printk: console [ttyS0] enabled
+[    3.771811] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[    3.772454] mma7660 1-004c: failed to read sensor mode
+[    3.773189] mma7660: probe of 1-004c failed with error -110
+[    3.783396] sun4i-pinctrl 1c20800.pinctrl: supply vcc-pf not found, using dummy regulator
+[    3.788635] sun4i-pinctrl 1c20800.pinctrl: supply vcc-ph not found, using dummy regulator
+[    3.809226] usb_phy_generic usb_phy_generic.0.auto: dummy supplies not allowed for exclusive requests
+[    3.814761] ------------[ cut here ]------------
+[    3.815013] WARNING: CPU: 0 PID: 41 at drivers/usb/musb/sunxi.c:406 sunxi_musb_ep_offset+0x4c/0x54
+[    3.815828] sunxi_musb_ep_offset called with non 0 offset
+[    3.816026] Modules linked in:
+[    3.816455] CPU: 0 PID: 41 Comm: kworker/u2:3 Not tainted 6.6.0 #1
+[    3.816766] Hardware name: Allwinner sun4i/sun5i Families
+[    3.817216] Workqueue: events_unbound deferred_probe_work_func
+[    3.818106]  unwind_backtrace from show_stack+0x10/0x14
+[    3.818383]  show_stack from dump_stack_lvl+0x40/0x4c
+[    3.818541]  dump_stack_lvl from __warn+0x84/0xc8
+[    3.818686]  __warn from warn_slowpath_fmt+0x124/0x190
+[    3.818884]  warn_slowpath_fmt from sunxi_musb_ep_offset+0x4c/0x54
+[    3.819055]  sunxi_musb_ep_offset from ep_config_from_hw+0xcc/0x150
+[    3.819244]  ep_config_from_hw from musb_probe+0xa08/0xcd8
+[    3.819400]  musb_probe from platform_probe+0x5c/0xb0
+[    3.819543]  platform_probe from really_probe+0xc8/0x2d8
+[    3.819687]  really_probe from __driver_probe_device+0x88/0x19c
+[    3.819842]  __driver_probe_device from driver_probe_device+0x30/0x104
+[    3.820015]  driver_probe_device from __device_attach_driver+0x94/0x108
+[    3.820209]  __device_attach_driver from bus_for_each_drv+0x90/0xe4
+[    3.820382]  bus_for_each_drv from __device_attach+0xa8/0x1a4
+[    3.820609]  __device_attach from bus_probe_device+0x88/0x8c
+[    3.820815]  bus_probe_device from device_add+0x5dc/0x7a8
+[    3.821042]  device_add from platform_device_add+0xec/0x1fc
+[    3.821261]  platform_device_add from platform_device_register_full+0x104/0x154
+[    3.821515]  platform_device_register_full from sunxi_musb_probe+0x218/0x3c0
+[    3.821757]  sunxi_musb_probe from platform_probe+0x5c/0xb0
+[    3.821990]  platform_probe from really_probe+0xc8/0x2d8
+[    3.822190]  really_probe from __driver_probe_device+0x88/0x19c
+[    3.822402]  __driver_probe_device from driver_probe_device+0x30/0x104
+[    3.822626]  driver_probe_device from __device_attach_driver+0x94/0x108
+[    3.822814]  __device_attach_driver from bus_for_each_drv+0x90/0xe4
+[    3.822998]  bus_for_each_drv from __device_attach+0xa8/0x1a4
+[    3.823187]  __device_attach from bus_probe_device+0x88/0x8c
+[    3.823355]  bus_probe_device from deferred_probe_work_func+0x78/0xa4
+[    3.823533]  deferred_probe_work_func from process_one_work+0x154/0x2ac
+[    3.823719]  process_one_work from worker_thread+0x290/0x4e8
+[    3.823879]  worker_thread from kthread+0xe0/0xfc
+[    3.824064]  kthread from ret_from_fork+0x14/0x28
+[    3.824318] Exception stack(0xe08b1fb0 to 0xe08b1ff8)
+[    3.824556] 1fa0:                                     00000000 00000000 00000000 00000000
+[    3.824781] 1fc0: 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+[    3.825002] 1fe0: 00000000 00000000 00000000 00000000 00000013 00000000
+[    3.825592] ---[ end trace 0000000000000000 ]---
+[    3.825924] musb-sunxi 1c13000.usb: Error unknown readb offset 128
+[    3.828066] musb-hdrc musb-hdrc.1.auto: error -EINVAL: musb_init_controller failed
+[    3.828597] musb-hdrc: probe of musb-hdrc.1.auto failed with error -22
+[    3.850578] ehci-platform 1c14000.usb: EHCI Host Controller
+[    3.851641] ehci-platform 1c14000.usb: new USB bus registered, assigned bus number 1
+[    3.854753] ehci-platform 1c1c000.usb: EHCI Host Controller
+[    3.854960] ehci-platform 1c1c000.usb: new USB bus registered, assigned bus number 2
+[    3.857548] ohci-platform 1c14400.usb: Generic Platform OHCI controller
+[    3.857822] ohci-platform 1c14400.usb: new USB bus registered, assigned bus number 3
+[    3.859501] ohci-platform 1c1c400.usb: Generic Platform OHCI controller
+[    3.859718] ohci-platform 1c1c400.usb: new USB bus registered, assigned bus number 4
+[    3.861873] clk: Disabling unused clocks
+[    3.868744] sunxi-mmc 1c0f000.mmc: initialized, max. request size: 2048 KB
+[    3.878130] ehci-platform 1c1c000.usb: irq 60, io mem 0x01c1c000
+[    3.880326] ohci-platform 1c14400.usb: irq 61, io mem 0x01c14400
+[    3.881261] ohci-platform 1c1c400.usb: irq 62, io mem 0x01c1c400
+[    3.882076] ehci-platform 1c14000.usb: irq 59, io mem 0x01c14000
+[    3.889302] mmc0: host does not support reading read-only switch, assuming write-enable
+[    3.890760] mmc0: new high speed SD card at address efe2
+[    3.895537] mmcblk0: mmc0:efe2 QEMU! 1.00 GiB
+[    3.912881] ehci-platform 1c1c000.usb: USB 2.0 started, EHCI 1.00
+[    3.916429]  mmcblk0: p1 p2
+[    3.919908] usb usb2: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 6.06
+[    3.920147] usb usb2: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    3.920346] usb usb2: Product: EHCI Host Controller
+[    3.920469] usb usb2: Manufacturer: Linux 6.6.0 ehci_hcd
+[    3.920587] usb usb2: SerialNumber: 1c1c000.usb
+[    3.932465] hub 2-0:1.0: USB hub found
+[    3.934005] hub 2-0:1.0: 6 ports detected
+[    3.941361] ehci-platform 1c14000.usb: USB 2.0 started, EHCI 1.00
+[    3.942891] usb usb1: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 6.06
+[    3.943076] usb usb1: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    3.943242] usb usb1: Product: EHCI Host Controller
+[    3.943343] usb usb1: Manufacturer: Linux 6.6.0 ehci_hcd
+[    3.943444] usb usb1: SerialNumber: 1c14000.usb
+[    3.944909] hub 1-0:1.0: USB hub found
+[    3.946393] hub 1-0:1.0: 6 ports detected
+[    3.950722] usb usb3: New USB device found, idVendor=1d6b, idProduct=0001, bcdDevice= 6.06
+[    3.951362] usb usb3: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    3.951529] usb usb3: Product: Generic Platform OHCI controller
+[    3.951644] usb usb3: Manufacturer: Linux 6.6.0 ohci_hcd
+[    3.951745] usb usb3: SerialNumber: 1c14400.usb
+[    3.953492] hub 3-0:1.0: USB hub found
+[    3.955335] hub 3-0:1.0: 3 ports detected
+[    3.959023] usb usb4: New USB device found, idVendor=1d6b, idProduct=0001, bcdDevice= 6.06
+[    3.959264] usb usb4: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    3.959431] usb usb4: Product: Generic Platform OHCI controller
+[    3.959547] usb usb4: Manufacturer: Linux 6.6.0 ohci_hcd
+[    3.959648] usb usb4: SerialNumber: 1c1c400.usb
+[    3.967962] hub 4-0:1.0: USB hub found
+[    3.968869] hub 4-0:1.0: 3 ports detected
+[    4.040444] EXT4-fs (mmcblk0p2): mounted filesystem 8f1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8 r/w with ordered data mode. Quota mode: disabled.
+[    4.043127] VFS: Mounted root (ext4 filesystem) on device 179:2.
+[    4.048287] devtmpfs: mounted
+[    4.074454] Freeing unused kernel image (initmem) memory: 1024K
+[    4.077233] Run /sbin/init as init process
+[    6.740230] systemd[1]: Failed to find module 'autofs4'
+[    7.568277] systemd[1]: systemd 252.39-1~deb12u2 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR +IMA +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD -BPF_FRAMEWORK -XKBCOMMON +UTMP +SYSVINIT default-hierarchy=unified)
+[    7.569867] systemd[1]: Detected architecture arm.
 
 Welcome to [1mDebian GNU/Linux 12 (bookworm)[0m!
 
-[    8.617184] systemd[1]: Hostname set to <informer701>.
-[    8.910779] systemd[1]: Using hardware watchdog 'sunxi-wdt', version 0, device /dev/watchdog0
-[    8.913023] systemd[1]: Watchdog running with a hardware timeout of 16s.
-[    8.921309] systemd[1]: memfd_create() called without MFD_EXEC or MFD_NOEXEC_SEAL set
-[   13.859542] systemd[1]: Queued start job for default target graphical.target.
-[   13.920743] systemd[1]: Created slice system-getty.slice - Slice /system/getty.
+[    7.683268] systemd[1]: Hostname set to <informer701>.
+[    8.063422] systemd[1]: Using hardware watchdog 'sunxi-wdt', version 0, device /dev/watchdog0
+[    8.066765] systemd[1]: Watchdog running with a hardware timeout of 16s.
+[    8.078875] systemd[1]: memfd_create() called without MFD_EXEC or MFD_NOEXEC_SEAL set
+[   12.327482] systemd[1]: Queued start job for default target graphical.target.
+[   12.365422] systemd[1]: Created slice system-getty.slice - Slice /system/getty.
 [[0;32m  OK  [0m] Created slice [0;1;39msystem-getty.slice[0m - Slice /system/getty.
-[   13.947343] systemd[1]: Created slice system-modprobe.slice - Slice /system/modprobe.
+[   12.377754] systemd[1]: Created slice system-modprobe.slice - Slice /system/modprobe.
 [[0;32m  OK  [0m] Created slice [0;1;39msystem-modpr…lice[0m - Slice /system/modprobe.
-[   13.964144] systemd[1]: Created slice system-serial\x2dgetty.slice - Slice /system/serial-getty.
+[   12.386147] systemd[1]: Created slice system-serial\x2dgetty.slice - Slice /system/serial-getty.
 [[0;32m  OK  [0m] Created slice [0;1;39msystem-seria…[0m - Slice /system/serial-getty.
-[   13.982638] systemd[1]: Created slice system-systemd\x2dfsck.slice - Slice /system/systemd-fsck.
+[   12.394023] systemd[1]: Created slice system-systemd\x2dfsck.slice - Slice /system/systemd-fsck.
 [[0;32m  OK  [0m] Created slice [0;1;39msystem-syste…[0m - Slice /system/systemd-fsck.
-[   13.997609] systemd[1]: Created slice user.slice - User and Session Slice.
+[   12.399619] systemd[1]: Created slice user.slice - User and Session Slice.
 [[0;32m  OK  [0m] Created slice [0;1;39muser.slice[0m - User and Session Slice.
-[   14.011349] systemd[1]: Started systemd-ask-password-console.path - Dispatch Password Requests to Console Directory Watch.
+[   12.406550] systemd[1]: Started systemd-ask-password-console.path - Dispatch Password Requests to Console Directory Watch.
 [[0;32m  OK  [0m] Started [0;1;39msystemd-ask-passwo…quests to Console Directory Watch.
-[   14.022131] systemd[1]: Started systemd-ask-password-wall.path - Forward Password Requests to Wall Directory Watch.
+[   12.413008] systemd[1]: Started systemd-ask-password-wall.path - Forward Password Requests to Wall Directory Watch.
 [[0;32m  OK  [0m] Started [0;1;39msystemd-ask-passwo… Requests to Wall Directory Watch.
-[   14.030258] systemd[1]: Expecting device dev-mmcblk0p1.device - /dev/mmcblk0p1...
+[   12.416707] systemd[1]: Expecting device dev-mmcblk0p1.device - /dev/mmcblk0p1...
          Expecting device [0;1;39mdev-mmcblk0p1.device[0m - /dev/mmcblk0p1...
-[   14.037474] systemd[1]: Expecting device dev-ttyS0.device - /dev/ttyS0...
+[   12.420075] systemd[1]: Expecting device dev-ttyS0.device - /dev/ttyS0...
          Expecting device [0;1;39mdev-ttyS0.device[0m - /dev/ttyS0...
-[   14.042933] systemd[1]: Reached target cryptsetup.target - Local Encrypted Volumes.
+[   12.423520] systemd[1]: Reached target cryptsetup.target - Local Encrypted Volumes.
 [[0;32m  OK  [0m] Reached target [0;1;39mcryptsetup.…get[0m - Local Encrypted Volumes.
-[   14.049523] systemd[1]: Reached target integritysetup.target - Local Integrity Protected Volumes.
+[   12.426278] systemd[1]: Reached target integritysetup.target - Local Integrity Protected Volumes.
 [[0;32m  OK  [0m] Reached target [0;1;39mintegrityse…Local Integrity Protected Volumes.
-[   14.057297] systemd[1]: Reached target paths.target - Path Units.
+[   12.429005] systemd[1]: Reached target paths.target - Path Units.
 [[0;32m  OK  [0m] Reached target [0;1;39mpaths.target[0m - Path Units.
-[   14.061168] systemd[1]: Reached target remote-fs.target - Remote File Systems.
+[   12.432359] systemd[1]: Reached target remote-fs.target - Remote File Systems.
 [[0;32m  OK  [0m] Reached target [0;1;39mremote-fs.target[0m - Remote File Systems.
-[   14.064438] systemd[1]: Reached target slices.target - Slice Units.
+[   12.435016] systemd[1]: Reached target slices.target - Slice Units.
 [[0;32m  OK  [0m] Reached target [0;1;39mslices.target[0m - Slice Units.
-[   14.069060] systemd[1]: Reached target veritysetup.target - Local Verity Protected Volumes.
+[   12.437937] systemd[1]: Reached target veritysetup.target - Local Verity Protected Volumes.
 [[0;32m  OK  [0m] Reached target [0;1;39mveritysetup… - Local Verity Protected Volumes.
-[   14.079448] systemd[1]: Listening on systemd-fsckd.socket - fsck to fsckd communication Socket.
+[   12.446618] systemd[1]: Listening on systemd-fsckd.socket - fsck to fsckd communication Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39msystemd-fsckd…sck to fsckd communication Socket.
-[   14.087965] systemd[1]: Listening on systemd-initctl.socket - initctl Compatibility Named Pipe.
+[   12.453464] systemd[1]: Listening on systemd-initctl.socket - initctl Compatibility Named Pipe.
 [[0;32m  OK  [0m] Listening on [0;1;39msystemd-initc… initctl Compatibility Named Pipe.
-[   14.170298] systemd[1]: systemd-journald-audit.socket - Journal Audit Socket was skipped because of an unmet condition check (ConditionSecurity=audit).
-[   14.179663] systemd[1]: Listening on systemd-journald-dev-log.socket - Journal Socket (/dev/log).
+[   12.529184] systemd[1]: systemd-journald-audit.socket - Journal Audit Socket was skipped because of an unmet condition check (ConditionSecurity=audit).
+[   12.536498] systemd[1]: Listening on systemd-journald-dev-log.socket - Journal Socket (/dev/log).
 [[0;32m  OK  [0m] Listening on [0;1;39msystemd-journ…t[0m - Journal Socket (/dev/log).
-[   14.190449] systemd[1]: Listening on systemd-journald.socket - Journal Socket.
+[   12.544866] systemd[1]: Listening on systemd-journald.socket - Journal Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39msystemd-journald.socket[0m - Journal Socket.
-[   14.204551] systemd[1]: Listening on systemd-udevd-control.socket - udev Control Socket.
+[   12.554162] systemd[1]: Listening on systemd-udevd-control.socket - udev Control Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39msystemd-udevd….socket[0m - udev Control Socket.
-[   14.215508] systemd[1]: Listening on systemd-udevd-kernel.socket - udev Kernel Socket.
+[   12.560772] systemd[1]: Listening on systemd-udevd-kernel.socket - udev Kernel Socket.
 [[0;32m  OK  [0m] Listening on [0;1;39msystemd-udevd…l.socket[0m - udev Kernel Socket.
-[   14.223538] systemd[1]: dev-hugepages.mount - Huge Pages File System was skipped because of an unmet condition check (ConditionPathExists=/sys/kernel/mm/hugepages).
-[   14.228255] systemd[1]: dev-mqueue.mount - POSIX Message Queue File System was skipped because of an unmet condition check (ConditionPathExists=/proc/sys/fs/mqueue).
-[   14.232163] systemd[1]: sys-kernel-debug.mount - Kernel Debug File System was skipped because of an unmet condition check (ConditionPathExists=/sys/kernel/debug).
-[   14.237634] systemd[1]: sys-kernel-tracing.mount - Kernel Trace File System was skipped because of an unmet condition check (ConditionPathExists=/sys/kernel/tracing).
-[   14.299869] systemd[1]: Starting fake-hwclock.service - Restore / save the current clock...
+[   12.567938] systemd[1]: dev-hugepages.mount - Huge Pages File System was skipped because of an unmet condition check (ConditionPathExists=/sys/kernel/mm/hugepages).
+[   12.571813] systemd[1]: dev-mqueue.mount - POSIX Message Queue File System was skipped because of an unmet condition check (ConditionPathExists=/proc/sys/fs/mqueue).
+[   12.575241] systemd[1]: sys-kernel-debug.mount - Kernel Debug File System was skipped because of an unmet condition check (ConditionPathExists=/sys/kernel/debug).
+[   12.578451] systemd[1]: sys-kernel-tracing.mount - Kernel Trace File System was skipped because of an unmet condition check (ConditionPathExists=/sys/kernel/tracing).
+[   12.636269] systemd[1]: Starting fake-hwclock.service - Restore / save the current clock...
          Starting [0;1;39mfake-hwclock.serv…estore / save the current clock...
-[   14.378438] systemd[1]: Starting kmod-static-nodes.service - Create List of Static Device Nodes...
+[   12.689941] systemd[1]: Starting kmod-static-nodes.service - Create List of Static Device Nodes...
          Starting [0;1;39mkmod-static-nodes…ate List of Static Device Nodes...
-[   14.499840] systemd[1]: Starting modprobe@configfs.service - Load Kernel Module configfs...
+[   12.764159] systemd[1]: Starting modprobe@configfs.service - Load Kernel Module configfs...
          Starting [0;1;39mmodprobe@configfs…m - Load Kernel Module configfs...
-[   14.566606] platform cpufreq-dt: deferred probe pending
-[   14.631073] systemd[1]: Starting modprobe@dm_mod.service - Load Kernel Module dm_mod...
+[   12.908254] systemd[1]: Starting modprobe@dm_mod.service - Load Kernel Module dm_mod...
          Starting [0;1;39mmodprobe@dm_mod.s…[0m - Load Kernel Module dm_mod...
-[   14.744264] systemd[1]: Starting modprobe@drm.service - Load Kernel Module drm...
+[   13.009980] systemd[1]: Starting modprobe@drm.service - Load Kernel Module drm...
          Starting [0;1;39mmodprobe@drm.service[0m - Load Kernel Module drm...
-[   14.968276] systemd[1]: Starting modprobe@efi_pstore.service - Load Kernel Module efi_pstore...
+[   13.093690] systemd[1]: Starting modprobe@efi_pstore.service - Load Kernel Module efi_pstore...
          Starting [0;1;39mmodprobe@efi_psto…- Load Kernel Module efi_pstore...
-[   15.040840] systemd[1]: Starting modprobe@fuse.service - Load Kernel Module fuse...
+[   13.263477] systemd[1]: Starting modprobe@fuse.service - Load Kernel Module fuse...
          Starting [0;1;39mmodprobe@fuse.ser…e[0m - Load Kernel Module fuse...
-[   15.148270] systemd[1]: Starting modprobe@loop.service - Load Kernel Module loop...
+[   13.305101] systemd[1]: Starting modprobe@loop.service - Load Kernel Module loop...
          Starting [0;1;39mmodprobe@loop.ser…e[0m - Load Kernel Module loop...
-[   15.152298] systemd[1]: systemd-fsck-root.service - File System Check on Root Device was skipped because of an unmet condition check (ConditionPathIsReadWrite=!/).
-[   15.187734] systemd[1]: systemd-journald.service: unit configures an IP firewall, but the local system does not support BPF/cgroup firewalling.
-[   15.188367] systemd[1]: (This warning is only shown for the first unit using IP firewalling.)
-[   15.258167] systemd[1]: Starting systemd-journald.service - Journal Service...
+[   13.328457] systemd[1]: systemd-fsck-root.service - File System Check on Root Device was skipped because of an unmet condition check (ConditionPathIsReadWrite=!/).
+[   13.343104] systemd[1]: systemd-journald.service: unit configures an IP firewall, but the local system does not support BPF/cgroup firewalling.
+[   13.343655] systemd[1]: (This warning is only shown for the first unit using IP firewalling.)
+[   13.434072] systemd[1]: Starting systemd-journald.service - Journal Service...
          Starting [0;1;39msystemd-journald.service[0m - Journal Service...
-[   15.380788] systemd[1]: Starting systemd-modules-load.service - Load Kernel Modules...
+[   13.546112] systemd[1]: Starting systemd-modules-load.service - Load Kernel Modules...
          Starting [0;1;39msystemd-modules-l…rvice[0m - Load Kernel Modules...
-[   15.468774] systemd[1]: Starting systemd-remount-fs.service - Remount Root and Kernel File Systems...
+[   13.613926] systemd[1]: Starting systemd-remount-fs.service - Remount Root and Kernel File Systems...
          Starting [0;1;39msystemd-remount-f…nt Root and Kernel File Systems...
-[   15.582495] systemd[1]: Starting systemd-udev-trigger.service - Coldplug All udev Devices...
+[   13.725657] systemd[1]: Starting systemd-udev-trigger.service - Coldplug All udev Devices...
          Starting [0;1;39msystemd-udev-trig…[0m - Coldplug All udev Devices...
-[   15.987659] systemd[1]: Finished fake-hwclock.service - Restore / save the current clock.
+[   13.951950] platform cpufreq-dt: deferred probe pending
+[   14.042411] systemd[1]: Finished fake-hwclock.service - Restore / save the current clock.
 [[0;32m  OK  [0m] Finished [0;1;39mfake-hwclock.serv… Restore / save the current clock.
-[   16.404224] systemd[1]: Finished kmod-static-nodes.service - Create List of Static Device Nodes.
+[   14.387639] systemd[1]: Finished kmod-static-nodes.service - Create List of Static Device Nodes.
 [[0;32m  OK  [0m] Finished [0;1;39mkmod-static-nodes…reate List of Static Device Nodes.
-[   16.509464] systemd[1]: modprobe@configfs.service: Deactivated successfully.
-[   16.559215] EXT4-fs (mmcblk0p2): re-mounted 8f1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8 r/w. Quota mode: disabled.
-[   16.568060] systemd[1]: Finished modprobe@configfs.service - Load Kernel Module configfs.
+[   14.483036] systemd[1]: modprobe@configfs.service: Deactivated successfully.
+[   14.514261] systemd[1]: Finished modprobe@configfs.service - Load Kernel Module configfs.
 [[0;32m  OK  [0m] Finished [0;1;39mmodprobe@configfs…[0m - Load Kernel Module configfs.
-[   16.768694] systemd[1]: modprobe@dm_mod.service: Deactivated successfully.
-[   16.814393] systemd[1]: Finished modprobe@dm_mod.service - Load Kernel Module dm_mod.
+[   14.621549] EXT4-fs (mmcblk0p2): re-mounted 8f1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8 r/w. Quota mode: disabled.
+[   14.667883] systemd[1]: modprobe@dm_mod.service: Deactivated successfully.
+[   14.696303] systemd[1]: Finished modprobe@dm_mod.service - Load Kernel Module dm_mod.
 [[0;32m  OK  [0m] Finished [0;1;39mmodprobe@dm_mod.s…e[0m - Load Kernel Module dm_mod.
-[   16.852283] systemd[1]: modprobe@drm.service: Deactivated successfully.
-[   16.916540] systemd[1]: Finished modprobe@drm.service - Load Kernel Module drm.
+[   14.888157] systemd[1]: modprobe@drm.service: Deactivated successfully.
+[   14.942165] systemd[1]: Finished modprobe@drm.service - Load Kernel Module drm.
 [[0;32m  OK  [0m] Finished [0;1;39mmodprobe@drm.service[0m - Load Kernel Module drm.
-[   17.046594] systemd[1]: modprobe@efi_pstore.service: Deactivated successfully.
-[   17.077299] systemd[1]: Finished modprobe@efi_pstore.service - Load Kernel Module efi_pstore.
+[   14.986808] systemd[1]: modprobe@efi_pstore.service: Deactivated successfully.
+[   15.032225] systemd[1]: Finished modprobe@efi_pstore.service - Load Kernel Module efi_pstore.
 [[0;32m  OK  [0m] Finished [0;1;39mmodprobe@efi_psto…m - Load Kernel Module efi_pstore.
-[   17.104218] cfg80211: Loading compiled-in X.509 certificates for regulatory database
-[   17.227074] systemd[1]: modprobe@fuse.service: Deactivated successfully.
-[   17.284068] systemd[1]: Finished modprobe@fuse.service - Load Kernel Module fuse.
+[   15.095011] systemd[1]: modprobe@fuse.service: Deactivated successfully.
+[   15.113928] cfg80211: Loading compiled-in X.509 certificates for regulatory database
+[   15.142285] systemd[1]: Finished modprobe@fuse.service - Load Kernel Module fuse.
 [[0;32m  OK  [0m] Finished [0;1;39mmodprobe@fuse.service[0m - Load Kernel Module fuse.
-[   17.343830] systemd[1]: modprobe@loop.service: Deactivated successfully.
-[   17.397330] systemd[1]: Finished modprobe@loop.service - Load Kernel Module loop.
+[   15.225092] systemd[1]: modprobe@loop.service: Deactivated successfully.
+[   15.282034] systemd[1]: Finished modprobe@loop.service - Load Kernel Module loop.
 [[0;32m  OK  [0m] Finished [0;1;39mmodprobe@loop.service[0m - Load Kernel Module loop.
-[   17.466402] systemd[1]: Finished systemd-remount-fs.service - Remount Root and Kernel File Systems.
+[   15.332664] systemd[1]: Finished systemd-remount-fs.service - Remount Root and Kernel File Systems.
 [[0;32m  OK  [0m] Finished [0;1;39msystemd-remount-f…ount Root and Kernel File Systems.
-[   17.536187] Loaded X.509 cert 'sforshee: 00b28ddf47aef9cea7'
-[   17.577801] systemd[1]: sys-fs-fuse-connections.mount - FUSE Control File System was skipped because of an unmet condition check (ConditionPathExists=/sys/fs/fuse/connections).
-[   17.736294] systemd[1]: Mounting sys-kernel-config.mount - Kernel Configuration File System...
+[   15.396439] systemd[1]: sys-fs-fuse-connections.mount - FUSE Control File System was skipped because of an unmet condition check (ConditionPathExists=/sys/fs/fuse/connections).
+[   15.439721] Loaded X.509 cert 'sforshee: 00b28ddf47aef9cea7'
+[   15.552840] systemd[1]: Mounting sys-kernel-config.mount - Kernel Configuration File System...
          Mounting [0;1;39msys-kernel-config…ernel Configuration File System...
-[   17.739929] systemd[1]: systemd-firstboot.service - First Boot Wizard was skipped because of an unmet condition check (ConditionFirstBoot=yes).
-[   17.741980] systemd[1]: systemd-pstore.service - Platform Persistent Storage Archival was skipped because of an unmet condition check (ConditionDirectoryNotEmpty=/sys/fs/pstore).
-[   17.987391] systemd[1]: Starting systemd-random-seed.service - Load/Save Random Seed...
+[   15.572502] systemd[1]: systemd-firstboot.service - First Boot Wizard was skipped because of an unmet condition check (ConditionFirstBoot=yes).
+[   15.574411] systemd[1]: systemd-pstore.service - Platform Persistent Storage Archival was skipped because of an unmet condition check (ConditionDirectoryNotEmpty=/sys/fs/pstore).
+[   15.684010] systemd[1]: Starting systemd-random-seed.service - Load/Save Random Seed...
          Starting [0;1;39msystemd-random-se…ice[0m - Load/Save Random Seed...
-[   17.998329] systemd[1]: systemd-repart.service - Repartition Root Disk was skipped because no trigger condition checks were met.
-[   18.146147] systemd[1]: Starting systemd-sysusers.service - Create System Users...
+[   15.688530] systemd[1]: systemd-repart.service - Repartition Root Disk was skipped because no trigger condition checks were met.
+[   15.809915] systemd[1]: Starting systemd-sysusers.service - Create System Users...
          Starting [0;1;39msystemd-sysusers.…rvice[0m - Create System Users...
-[   18.466271] systemd[1]: Finished systemd-modules-load.service - Load Kernel Modules.
+[   16.171866] systemd[1]: Finished systemd-modules-load.service - Load Kernel Modules.
 [[0;32m  OK  [0m] Finished [0;1;39msystemd-modules-l…service[0m - Load Kernel Modules.
-[   18.473616] systemd[1]: Mounted sys-kernel-config.mount - Kernel Configuration File System.
+[   16.195756] systemd[1]: Mounted sys-kernel-config.mount - Kernel Configuration File System.
 [[0;32m  OK  [0m] Mounted [0;1;39msys-kernel-config.… Kernel Configuration File System.
-[   18.624580] systemd[1]: Starting systemd-sysctl.service - Apply Kernel Variables...
+[   16.344373] systemd[1]: Starting systemd-sysctl.service - Apply Kernel Variables...
          Starting [0;1;39msystemd-sysctl.se…ce[0m - Apply Kernel Variables...
-[   19.256944] systemd[1]: Finished systemd-sysusers.service - Create System Users.
+[   16.910270] systemd[1]: Finished systemd-sysusers.service - Create System Users.
 [[0;32m  OK  [0m] Finished [0;1;39msystemd-sysusers.service[0m - Create System Users.
-[   19.398677] systemd[1]: Starting systemd-tmpfiles-setup-dev.service - Create Static Device Nodes in /dev...
+[   17.020328] systemd[1]: Starting systemd-tmpfiles-setup-dev.service - Create Static Device Nodes in /dev...
          Starting [0;1;39msystemd-tmpfiles-…ate Static Device Nodes in /dev...
-[   19.657743] systemd[1]: Finished systemd-sysctl.service - Apply Kernel Variables.
+[   17.122865] systemd[1]: Finished systemd-sysctl.service - Apply Kernel Variables.
 [[0;32m  OK  [0m] Finished [0;1;39msystemd-sysctl.service[0m - Apply Kernel Variables.
-[   20.449117] systemd[1]: Finished systemd-tmpfiles-setup-dev.service - Create Static Device Nodes in /dev.
+[   18.046577] systemd[1]: Finished systemd-tmpfiles-setup-dev.service - Create Static Device Nodes in /dev.
 [[0;32m  OK  [0m] Finished [0;1;39msystemd-tmpfiles-…reate Static Device Nodes in /dev.
-[   20.460358] systemd[1]: Reached target local-fs-pre.target - Preparation for Local File Systems.
+[   18.054985] systemd[1]: Reached target local-fs-pre.target - Preparation for Local File Systems.
 [[0;32m  OK  [0m] Reached target [0;1;39mlocal-fs-pr…reparation for Local File Systems.
-[   20.598680] systemd[1]: Starting informer701-zram.service - Informer 701 Compressed RAM Swap (zram0, 512 MiB DDR3)...
+[   18.145565] systemd[1]: Starting informer701-zram.service - Informer 701 Compressed RAM Swap (zram0, 512 MiB DDR3)...
          Starting [0;1;39minformer701-zram.… RAM Swap (zram0, 512 MiB DDR3)...
-[   20.781365] systemd[1]: Starting systemd-udevd.service - Rule-based Manager for Device Events and Files...
+[   18.264391] systemd[1]: Starting systemd-udevd.service - Rule-based Manager for Device Events and Files...
          Starting [0;1;39msystemd-udevd.ser…ger for Device Events and Files...
-[   20.878083] systemd[1]: Started systemd-journald.service - Journal Service.
+[   18.305831] systemd[1]: Started systemd-journald.service - Journal Service.
 [[0;32m  OK  [0m] Started [0;1;39msystemd-journald.service[0m - Journal Service.
-[   20.986005] random: crng init done
+[   18.891615] random: crng init done
+[   19.088614] lz4_compress: loading out-of-tree module taints kernel.
 [[0;32m  OK  [0m] Finished [0;1;39msystemd-random-se…rvice[0m - Load/Save Random Seed.
-[   21.733111] lz4_compress: loading out-of-tree module taints kernel.
-[   23.363683] zram: Added device: zram0
-[[0m[0;31m*     [0m] (1 of 5) Job dev-mmcblk0p1.device/start running (9s / 1min 30s)
-M[K[[0;1;31m*[0m[0;31m*    [0m] (1 of 5) Job dev-mmcblk0p1.device/start running (10s / 1min 30s)
-M[K[[0;32m  OK  [0m] Started [0;1;39msystemd-udevd.serv…nager for Device Events and Files.
-[K[[0;32m  OK  [0m] Listening on [0;1;39msystemd-rfkil…l Switch Status /dev/rfkill Watch.
-[   25.476944] zram0: detected capacity change from 0 to 508016
-[   25.797867] ntfs3: Max link count 4000
-[   26.409199] Adding 254004k swap on /dev/zram0.  Priority:100 extents:1 across:254004k SS
+[   20.302225] zram: Added device: zram0
+[[0;32m  OK  [0m] Started [0;1;39msystemd-udevd.serv…nager for Device Events and Files.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-rfkil…l Switch Status /dev/rfkill Watch.
+[   22.094807] zram0: detected capacity change from 0 to 508016
+[   22.344265] ntfs3: Max link count 4000
+[   22.722547] Adding 254004k swap on /dev/zram0.  Priority:100 extents:1 across:254004k SS
 [[0;32m  OK  [0m] Finished [0;1;39minformer701-zram.…ed RAM Swap (zram0, 512 MiB DDR3).
 [[0;32m  OK  [0m] Reached target [0;1;39mswap.target[0m - Swaps.
          Mounting [0;1;39mtmp.mount[0m - /tmp...
@@ -409,80 +407,78 @@ Welcome to [1mDebian GNU/Linux 12 (bookworm)[0m!
 [[0;32m  OK  [0m] Mounted [0;1;39mvar-log.mount[0m - /var/log.
 [[0;32m  OK  [0m] Mounted [0;1;39mvar-tmp.mount[0m - /var/tmp.
 [[0;32m  OK  [0m] Reached target [0;1;39mlocal-fs.target[0m - Local File Systems.
+         Starting [0;1;39minformer701-share…hared SD Partition (/mnt/share)...
          Starting [0;1;39msystemd-journal-f…h Journal to Persistent Storage...
-[   27.963592] systemd-journald[1234]: Received client request to flush runtime journal.
+[   23.785819] systemd-journald[1233]: Received client request to flush runtime journal.
 [[0;32m  OK  [0m] Finished [0;1;39msystemd-journal-f…ush Journal to Persistent Storage.
          Starting [0;1;39msystemd-tmpfiles-…te System Files and Directories...
+[[0;32m  OK  [0m] Finished [0;1;39minformer701-share… Shared SD Partition (/mnt/share).
 [[0;32m  OK  [0m] Finished [0;1;39msystemd-tmpfiles-…eate System Files and Directories.
 [[0;32m  OK  [0m] Started [0;1;39mhaveged.service[0…mon based on the HAVEGE algorithm.
          Starting [0;1;39msystemd-timesyncd… - Network Time Synchronization...
          Starting [0;1;39msystemd-update-ut…rd System Boot/Shutdown in UTMP...
 [[0;32m  OK  [0m] Finished [0;1;39msystemd-update-ut…cord System Boot/Shutdown in UTMP.
-[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (1 of 4) Job dev-mmcblk0p1.device/start running (19s / 1min 30s)
-M[K[[0;32m  OK  [0m] Started [0;1;39msystemd-timesyncd.…0m - Network Time Synchronization.
-[K[[0;32m  OK  [0m] Reached target [0;1;39mtime-set.target[0m - System Time Set.
-[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (2 of 3) Job dev-ttyS0.device/start running (21s / 1min 30s)
-M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (2 of 3) Job dev-ttyS0.device/start running (22s / 1min 30s)
-M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (2 of 3) Job dev-ttyS0.device/start running (22s / 1min 30s)
-M[K[    [0;31m*[0;1;31m*[0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (23s / no limit)
-M[K[     [0;31m*[0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (23s / no limit)
-M[K[    [0;31m*[0;1;31m*[0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (24s / no limit)
-M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (1 of 3) Job dev-mmcblk0p1.device/start running (24s / 1min 30s)
-M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (25s / 1min 30s)
-M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (25s / 1min 30s)
-M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (2 of 3) Job dev-ttyS0.device/start running (26s / 1min 30s)
-M[K[[0;1;31m*[0m[0;31m*    [0m] (2 of 3) Job dev-ttyS0.device/start running (26s / 1min 30s)
-M[K[[0m[0;31m*     [0m] (2 of 3) Job dev-ttyS0.device/start running (27s / 1min 30s)
-M[K[[0;1;31m*[0m[0;31m*    [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (27s / no limit)
-M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (28s / no limit)
-M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (28s / no limit)
-M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (29s / 1min 30s)
-M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (1 of 3) Job dev-mmcblk0p1.device/start running (29s / 1min 30s)
-M[K[    [0;31m*[0;1;31m*[0m] (1 of 3) Job dev-mmcblk0p1.device/start running (30s / 1min 30s)
-M[K[     [0;31m*[0m] (2 of 3) Job dev-ttyS0.device/start running (31s / 1min 30s)
-M[K[    [0;31m*[0;1;31m*[0m] (2 of 3) Job dev-ttyS0.device/start running (31s / 1min 30s)
-M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (2 of 3) Job dev-ttyS0.device/start running (31s / 1min 30s)
-M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (32s / no limit)
-M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (32s / no limit)
-M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (33s / no limit)
-M[K[[0;1;31m*[0m[0;31m*    [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (34s / 1min 30s)
-M[K[[0m[0;31m*     [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (34s / 1min 30s)
-M[K[[0;1;31m*[0m[0;31m*    [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (35s / 1min 30s)
-M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (2 of 3) Job dev-ttyS0.device/start running (35s / 1min 30s)
-M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (2 of 3) Job dev-ttyS0.device/start running (36s / 1min 30s)
-M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (2 of 3) Job dev-ttyS0.device/start running (36s / 1min 30s)
-M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (37s / no limit)
-M[K[    [0;31m*[0;1;31m*[0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (37s / no limit)
-M[K[     [0;31m*[0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (38s / no limit)
-M[K[    [0;31m*[0;1;31m*[0m] (1 of 3) Job dev-mmcblk0p1.device/start running (38s / 1min 30s)
-M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (1 of 3) Job dev-mmcblk0p1.device/start running (39s / 1min 30s)
-M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (39s / 1min 30s)
-M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (2 of 3) Job dev-ttyS0.device/start running (40s / 1min 30s)
-M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (2 of 3) Job dev-ttyS0.device/start running (41s / 1min 30s)
-M[K[[0;1;31m*[0m[0;31m*    [0m] (2 of 3) Job dev-ttyS0.device/start running (41s / 1min 30s)
-M[K[[0m[0;31m*     [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (41s / no limit)
-M[K[[0;1;31m*[0m[0;31m*    [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (42s / no limit)
-M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (43s / no limit)
-M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (43s / 1min 30s)
-M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (44s / 1min 30s)
-M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (1 of 3) Job dev-mmcblk0p1.device/start running (44s / 1min 30s)
-M[K[    [0;31m*[0;1;31m*[0m] (2 of 3) Job dev-ttyS0.device/start running (45s / 1min 30s)
-M[K[     [0;31m*[0m] (2 of 3) Job dev-ttyS0.device/start running (45s / 1min 30s)
-M[K[    [0;31m*[0;1;31m*[0m] (2 of 3) Job dev-ttyS0.device/start running (46s / 1min 30s)
-M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (46s / no limit)
-M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (47s / no limit)
-M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (48s / no limit)
-M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (48s / 1min 30s)
-M[K[[0;1;31m*[0m[0;31m*    [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (49s / 1min 30s)
-M[K[[0m[0;31m*     [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (49s / 1min 30s)
-M[K[[0;1;31m*[0m[0;31m*    [0m] (2 of 3) Job dev-ttyS0.device/start running (50s / 1min 30s)
-M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (2 of 3) Job dev-ttyS0.device/start running (50s / 1min 30s)
-M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (2 of 3) Job dev-ttyS0.device/start running (51s / 1min 30s)
-M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (51s / no limit)
-M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (52s / no limit)
-M[K[    [0;31m*[0;1;31m*[0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (53s / no limit)
-M[K[     [0;31m*[0m] (1 of 3) Job dev-mmcblk0p1.device/start running (53s / 1min 30s)
-M[K[    [0;31m*[0;1;31m*[0m] (1 of 3) Job dev-mmcblk0p1.device/start running (54s / 1min 30s)
+[[0;32m  OK  [0m] Started [0;1;39msystemd-timesyncd.…0m - Network Time Synchronization.
+[[0;32m  OK  [0m] Reached target [0;1;39mtime-set.target[0m - System Time Set.
+[[0m[0;31m*     [0m] (1 of 3) Job dev-ttyS0.device/start running (18s / 1min 30s)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (1 of 3) Job dev-ttyS0.device/start running (18s / 1min 30s)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (1 of 3) Job dev-ttyS0.device/start running (19s / 1min 30s)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (19s / no limit)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (20s / no limit)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (20s / no limit)
+M[K[    [0;31m*[0;1;31m*[0m] (3 of 3) Job dev-mmcblk0p1.device/start running (21s / 1min 30s)
+M[K[     [0;31m*[0m] (3 of 3) Job dev-mmcblk0p1.device/start running (21s / 1min 30s)
+M[K[    [0;31m*[0;1;31m*[0m] (3 of 3) Job dev-mmcblk0p1.device/start running (22s / 1min 30s)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (1 of 3) Job dev-ttyS0.device/start running (22s / 1min 30s)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (1 of 3) Job dev-ttyS0.device/start running (23s / 1min 30s)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (1 of 3) Job dev-ttyS0.device/start running (23s / 1min 30s)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (24s / no limit)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (24s / no limit)
+M[K[[0m[0;31m*     [0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (25s / no limit)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (3 of 3) Job dev-mmcblk0p1.device/start running (25s / 1min 30s)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (3 of 3) Job dev-mmcblk0p1.device/start running (26s / 1min 30s)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (3 of 3) Job dev-mmcblk0p1.device/start running (26s / 1min 30s)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (1 of 3) Job dev-ttyS0.device/start running (27s / 1min 30s)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (1 of 3) Job dev-ttyS0.device/start running (27s / 1min 30s)
+M[K[    [0;31m*[0;1;31m*[0m] (1 of 3) Job dev-ttyS0.device/start running (28s / 1min 30s)
+M[K[     [0;31m*[0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (28s / no limit)
+M[K[    [0;31m*[0;1;31m*[0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (29s / no limit)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (30s / no limit)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (3 of 3) Job dev-mmcblk0p1.device/start running (30s / 1min 30s)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (3 of 3) Job dev-mmcblk0p1.device/start running (31s / 1min 30s)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (3 of 3) Job dev-mmcblk0p1.device/start running (31s / 1min 30s)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (1 of 3) Job dev-ttyS0.device/start running (32s / 1min 30s)
+M[K[[0m[0;31m*     [0m] (1 of 3) Job dev-ttyS0.device/start running (32s / 1min 30s)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (1 of 3) Job dev-ttyS0.device/start running (33s / 1min 30s)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (33s / no limit)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (34s / no limit)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (34s / no limit)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (3 of 3) Job dev-mmcblk0p1.device/start running (35s / 1min 30s)
+M[K[    [0;31m*[0;1;31m*[0m] (3 of 3) Job dev-mmcblk0p1.device/start running (35s / 1min 30s)
+M[K[     [0;31m*[0m] (3 of 3) Job dev-mmcblk0p1.device/start running (36s / 1min 30s)
+M[K[    [0;31m*[0;1;31m*[0m] (1 of 3) Job dev-ttyS0.device/start running (36s / 1min 30s)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (1 of 3) Job dev-ttyS0.device/start running (37s / 1min 30s)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (1 of 3) Job dev-ttyS0.device/start running (37s / 1min 30s)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (38s / no limit)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (38s / no limit)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (39s / no limit)
+M[K[[0m[0;31m*     [0m] (3 of 3) Job dev-mmcblk0p1.device/start running (39s / 1min 30s)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (3 of 3) Job dev-mmcblk0p1.device/start running (40s / 1min 30s)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (3 of 3) Job dev-mmcblk0p1.device/start running (40s / 1min 30s)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (1 of 3) Job dev-ttyS0.device/start running (41s / 1min 30s)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (1 of 3) Job dev-ttyS0.device/start running (41s / 1min 30s)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (1 of 3) Job dev-ttyS0.device/start running (42s / 1min 30s)
+M[K[    [0;31m*[0;1;31m*[0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (42s / no limit)
+M[K[     [0;31m*[0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (43s / no limit)
+M[K[    [0;31m*[0;1;31m*[0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (43s / no limit)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (3 of 3) Job dev-mmcblk0p1.device/start running (44s / 1min 30s)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (3 of 3) Job dev-mmcblk0p1.device/start running (44s / 1min 30s)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (3 of 3) Job dev-mmcblk0p1.device/start running (45s / 1min 30s)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (1 of 3) Job dev-ttyS0.device/start running (45s / 1min 30s)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (1 of 3) Job dev-ttyS0.device/start running (46s / 1min 30s)
+M[K[[0m[0;31m*     [0m] (1 of 3) Job dev-ttyS0.device/start running (46s / 1min 30s)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (47s / no limit)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (2 of 3) Job systemd-udev-trigger.s…ice/start running (47s / no limit)
 M[K[[0;32m  OK  [0m] Finished [0;1;39msystemd-udev-trig…e[0m - Coldplug All udev Devices.
 [K[[0;32m  OK  [0m] Reached target [0;1;39msysinit.target[0m - System Initialization.
 [[0;32m  OK  [0m] Started [0;1;39mdpkg-db-backup.tim… Daily dpkg database backup timer.
@@ -497,16 +493,17 @@ Welcome to [1mDebian GNU/Linux 12 (bookworm)[0m!
          Starting [0;1;39msystemd-logind.se…ice[0m - User Login Management...
          Starting [0;1;39msystemd-user-sess…vice[0m - Permit User Sessions...
 [[0;32m  OK  [0m] Finished [0;1;39msystemd-user-sess…ervice[0m - Permit User Sessions.
-[[0;32m  OK  [0m] Found device [0;1;39mdev-ttyS0.device[0m - /dev/ttyS0.
 [[0;32m  OK  [0m] Started [0;1;39mdropbear.service[…- Dropbear Lightweight SSH Server.
+[[0;32m  OK  [0m] Found device [0;1;39mdev-ttyS0.device[0m - /dev/ttyS0.
+[[0;32m  OK  [0m] Started [0;1;39mdbus.service[0m - D-Bus System Message Bus.
+[[0;32m  OK  [0m] Found device [0;1;39mdev-mmcblk0p1.device[0m - /dev/mmcblk0p1.
 [[0;32m  OK  [0m] Started [0;1;39mgetty@tty1.service[0m - Getty on tty1.
 [[0;32m  OK  [0m] Started [0;1;39mserial-getty@ttyS0…rvice[0m - Serial Getty on ttyS0.
 [[0;32m  OK  [0m] Reached target [0;1;39mgetty.target[0m - Login Prompts.
-[[0;32m  OK  [0m] Started [0;1;39mdbus.service[0m - D-Bus System Message Bus.
-[[0;32m  OK  [0m] Found device [0;1;39mdev-mmcblk0p1.device[0m - /dev/mmcblk0p1.
          Starting [0;1;39msystemd-fsck@dev-… System Check on /dev/mmcblk0p1...
 [[0;32m  OK  [0m] Started [0;1;39msystemd-logind.service[0m - User Login Management.
 [[0;32m  OK  [0m] Started [0;1;39msystemd-fsckd.serv…tem Check Daemon to report status.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-fsck@dev-…le System Check on /dev/mmcblk0p1.
 
 
 Informer 701 (Allwinner A10, Debian 12 Bookworm armhf) informer701 ttyS0
@@ -517,19 +514,19 @@ Linux informer701 6.6.0 #1 SMP Sat Oct 31 16:41:38 UTC 2026 armv7l
 
 ====================================================================
  Informer 701 (плата N708H6, Allwinner A10, 512 МиБ DDR3)
- Debian 12 (Bookworm) armhf / systemd / Linux 6.6.0 (debian-20261126-0533)
+ Debian 12 (Bookworm) armhf / systemd / Linux 6.6.0 (debian-20261126-0845)
 ====================================================================
  Быстрые команды:
-   info       сводка по плате, памяти, zram, watchdog и PMIC
-   diag       полный отчёт (частоты, AXP209, dmesg, разделы)
-   savelog    сохранить diag + journalctl на FAT-раздел /boot/logs/
-   usbnet     сеть по micro-USB OTG (192.168.77.1, SSH, DHCP)
-   wifi       управление Wi-Fi (scan, up, ap, share, status, selftest)
-   pkg        менеджер пакетов (обёртка над apt / dpkg)
-   accel      акселерометр MMA7660 (read, watch, level, info)
-   pmic-vbus  контроль напряжения питания 5 В через АЦП AXP209
-   wdt        статус аппаратного сторожевого таймера (/dev/watchdog)
-   bootnext   безопасный выбор варианта DTB на одну загрузку
+   rootfs-expand  расширить rootfs + создать общий раздел для Windows (/mnt/share)
+   wifi-config    конфигуратор Wi-Fi адаптеров (клиент STA + точка доступа AP)
+   wifi           управление Wi-Fi (scan, connect, ap, status, selftest)
+   usbnet         сеть по micro-USB OTG (192.168.77.1, SSH, DHCP)
+   pkg            менеджер пакетов (apt / dpkg, /mnt/share/deb, /boot/deb)
+   info / diag    сводка и полный отчёт по плате, частотам, PMIC и разделам
+   savelog        сохранить отчёт в /boot/logs/ и /mnt/share/logs/
+   accel          акселерометр MMA7660 (read, watch, level, info)
+   pmic-vbus      контроль напряжения питания 5 В через АЦП AXP209
+   wdt / bootnext сторожевой таймер (/dev/watchdog) и разовый выбор DTB
 ====================================================================
 [?2004hroot@informer701:~# 
 ==================================================================
@@ -577,18 +574,18 @@ Linux informer701 6.6.0 #1 SMP Sat Oct 31 16:41:38 UTC 2026 armv7l
 === 5. Модули ядра 6.6, подписанная regulatory.db и wifi selftest ===
   [PASS] modprobe cfg80211 + проверка регуляторной базы (iw reg get)
   [PASS] modprobe mac80211
-[  125.386111] usbcore: registered new interface driver rt2800usb
+[  113.244576] usbcore: registered new interface driver rt2800usb
   [PASS] modprobe rt2800usb
-[  126.234595] usbcore: registered new interface driver ath9k_htc
+[  114.057090] usbcore: registered new interface driver ath9k_htc
   [PASS] modprobe ath9k_htc
-[  126.595952] usbcore: registered new interface driver carl9170
+[  114.358467] usbcore: registered new interface driver carl9170
   [PASS] modprobe carl9170
-[  126.973310] usbcore: registered new interface driver rtl8xxxu
+[  114.713562] usbcore: registered new interface driver rtl8xxxu
   [PASS] modprobe rtl8xxxu
-[  129.480541] usbcore: registered new interface driver rtl88x2bu
+[  116.872479] usbcore: registered new interface driver rtl88x2bu
   [PASS] modprobe 88x2bu
-[  129.853186] usbcore: registered new device driver r8152-cfgselector
-[  129.853709] usbcore: registered new interface driver r8152
+[  117.291982] usbcore: registered new device driver r8152-cfgselector
+[  117.292446] usbcore: registered new interface driver r8152
   [PASS] modprobe r8152
   [PASS] modprobe asix
   [PASS] modprobe cdc_ether
@@ -599,14 +596,20 @@ Linux informer701 6.6.0 #1 SMP Sat Oct 31 16:41:38 UTC 2026 armv7l
   [PASS] /etc/modprobe.d/blacklist-rtw88.conf блокирует rtw88_8822bu
   загружено модулей: 27
   [PASS] полный самотест /usr/local/bin/wifi selftest
+  [PASS] полный самотест многоадаптерного конфигуратора /usr/local/bin/wifi-config selftest
+  [PASS] wifi config делегирует команды в wifi-config (STA + AP профили)
 
-=== 6. Бортовые утилиты Informer 701 (devmem2, clk, regs, diag, bootnext, pkg...) ===
+=== 6. Бортовые утилиты Informer 701, rootfs-expand (exFAT Windows) и savelog ===
+  [PASS] /etc/default/locale задаёт LANG=C.UTF-8 (без предупреждений pam_env)
   [PASS] devmem2 читает регистр CCU PLL1 (0x01c20000)
   [PASS] clk расшифровывает частоты CCU Allwinner A10
   [PASS] regs читает регистры CCU/PIO/TWI0/WDOG
-  [PASS] info выводит сводку по плате
+[  151.306317] EXT4-fs (mmcblk0p2): resizing filesystem from 114432 to 212480 blocks
+[  151.411575] EXT4-fs (mmcblk0p2): resized filesystem to 212480
+  [PASS] rootfs-expand онлайн расширяет / и создаёт Windows-раздел /mnt/share (exFAT)
+  [PASS] info выводит сводку по плате и видит /mnt/share
   [PASS] whichboot определяет носители
-  [PASS] savelog сохраняет отчёт diag + journalctl на FAT-раздел /boot/logs/
+  [PASS] savelog сохраняет отчёт и в /boot/logs/, и на общий раздел /mnt/share/logs/
   [PASS] bootnext (список / -n safe / откат через informer701-bootinit) работает
   [PASS] usbnet status отрабатывает штатно
   [PASS] pkg status и pkg installed работают поверх apt/dpkg
@@ -614,6 +617,6 @@ Linux informer701 6.6.0 #1 SMP Sat Oct 31 16:41:38 UTC 2026 armv7l
   [PASS] синтаксис bash -n всех скриптов в /usr/local/bin и /usr/local/sbin
 
 ==================================================================
- QTEST_RESULT: PASS (55 проверок успешно, 0 ошибок)
+ QTEST_RESULT: PASS (59 проверок успешно, 0 ошибок)
 ==================================================================
-[  167.681719] reboot: System halted
+[  181.503216] reboot: System halted

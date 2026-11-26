@@ -246,12 +246,17 @@ cmd_scan() {
 
 # ---------------------------------------------------------------- wpa_supplicant
 wpa_running() { local ifc="$1"; [ -f "$RUN/wpa.$ifc.pid" ] && kill -0 "$(cat "$RUN/wpa.$ifc.pid")" 2>/dev/null; }
+ap_running()  { local ifc="$1"; [ -f "$RUN/hostapd.$ifc.pid" ] && kill -0 "$(cat "$RUN/hostapd.$ifc.pid")" 2>/dev/null; }
 
 stop_wpa() {
-    local ifc="$1"
-    [ -f "$RUN/wpa.$ifc.pid" ] && kill "$(cat "$RUN/wpa.$ifc.pid")" 2>/dev/null || true
-    rm -f "$RUN/wpa.$ifc.pid"
-    killall wpa_supplicant 2>/dev/null || true
+    local ifc="$1" pid=""
+    if [ -f "$RUN/wpa.$ifc.pid" ]; then
+        kill "$(cat "$RUN/wpa.$ifc.pid" 2>/dev/null)" 2>/dev/null || true
+        rm -f "$RUN/wpa.$ifc.pid"
+    fi
+    pid=$(wpa_find_pid "$ifc" 2>/dev/null || true)
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+    rm -f "$CTRL_DIR/$ifc" 2>/dev/null || true
 }
 
 WPA_F=""
@@ -275,18 +280,20 @@ wpa_find_pid() {
 }
 
 start_wpa() {
-    local ifc="$1"
+    local ifc="$1" cfg="${2:-$CONF}"
+    local ilog="/var/log/wifi-${ifc}.log"
     mkdir -p "$RUN" /var/log "$CTRL_DIR"
     rm -f "$RUN/wpa.$ifc.pid"
-    : > "$LOG" 2>/dev/null || true
+    : > "$ilog" 2>/dev/null || true
+    ln -sfn "$ilog" "$LOG" 2>/dev/null || true
     wpa_supports_f
     if [ "$WPA_F" = 1 ]; then
-        wpa_supplicant -B -P "$RUN/wpa.$ifc.pid" -i "$ifc" -c "$CONF" \
-            -D nl80211,wext -f "$LOG" >>"$LOG" 2>&1
+        wpa_supplicant -B -P "$RUN/wpa.$ifc.pid" -i "$ifc" -c "$cfg" \
+            -D nl80211,wext -f "$ilog" >>"$ilog" 2>&1
     elif command -v setsid >/dev/null 2>&1; then
-        setsid wpa_supplicant -i "$ifc" -c "$CONF" -D nl80211,wext >>"$LOG" 2>&1 &
+        setsid wpa_supplicant -i "$ifc" -c "$cfg" -D nl80211,wext >>"$ilog" 2>&1 &
     else
-        wpa_supplicant -i "$ifc" -c "$CONF" -D nl80211,wext >>"$LOG" 2>&1 &
+        wpa_supplicant -i "$ifc" -c "$cfg" -D nl80211,wext >>"$ilog" 2>&1 &
     fi
     local i=0 pid=""
     while [ "$i" -lt 5 ]; do
@@ -296,11 +303,11 @@ start_wpa() {
         sleep 1
     done
     if ! wpa_running "$ifc"; then
-        warn "wpa_supplicant не запустился. Последние строки $LOG:"
-        tail -12 "$LOG" 2>/dev/null | sed 's/^/    /'
+        warn "wpa_supplicant на $ifc не запустился. Последние строки $ilog:"
+        tail -12 "$ilog" 2>/dev/null | sed 's/^/    /'
         return 1
     fi
-    ok "wpa_supplicant запущен (pid $(cat "$RUN/wpa.$ifc.pid" 2>/dev/null)), лог: $LOG"
+    ok "wpa_supplicant на $ifc запущен (pid $(cat "$RUN/wpa.$ifc.pid" 2>/dev/null)), лог: $ilog"
     return 0
 }
 
@@ -530,15 +537,28 @@ cmd_ps() {
     esac
 }
 
+stop_ap_ifc() {
+    local ifc="$1"
+    if [ -f "$RUN/hostapd.$ifc.pid" ]; then
+        kill "$(cat "$RUN/hostapd.$ifc.pid" 2>/dev/null)" 2>/dev/null || true
+        rm -f "$RUN/hostapd.$ifc.pid"
+    fi
+    if [ -f "$RUN/dnsmasq-ap.$ifc.pid" ]; then
+        kill "$(cat "$RUN/dnsmasq-ap.$ifc.pid" 2>/dev/null)" 2>/dev/null || true
+        rm -f "$RUN/dnsmasq-ap.$ifc.pid" "$RUN/dnsmasq-ap.$ifc.leases"
+    fi
+    rm -f "$RUN/active-role.$ifc" 2>/dev/null || true
+}
+
 cmd_connect() {
     need_root
     local ssid="${1:-}" pass="${2:-}"
-    [ -n "$ssid" ] || { say "использование: wifi connect '<SSID>' '<пароль>'"; return 1; }
+    [ -n "$ssid" ] || { say "использование: wifi connect '<SSID>' '<пароль>' [iface]"; return 1; }
     local ifc
     ifc=$(require_wl "${3:-}") || return 1
     ensure_conf; apply_reg
     ok "подключаю $ifc к '$ssid'"
-    [ -f "$RUN/hostapd.pid" ] && cmd_ap_off
+    stop_ap_ifc "$ifc"
     stop_wpa "$ifc"
     ip link set "$ifc" down 2>/dev/null || true
     iw dev "$ifc" set type managed 2>/dev/null || true
@@ -557,13 +577,13 @@ cmd_connect() {
     apply_tx "$ifc"
     start_wpa "$ifc" || { diag_no_assoc; return 1; }
     say "  жду ассоциации (до 40 с)..."
-    local i=0 state=""
+    local i=0 state="" ilog="/var/log/wifi-${ifc}.log"
     while [ "$i" -lt 40 ]; do
         i=$((i+1))
         assoc_ok "$ifc" && break
         state=$(wpa_state "$ifc")
         wpa_running "$ifc" || { state="${state:-wpa_supplicant завершился}"; break; }
-        if [ "$i" -gt 8 ] && grep -qE '4WAY_HANDSHAKE_TIMEOUT|WRONG_KEY|pre-shared key may be wrong' "$LOG" 2>/dev/null; then
+        if [ "$i" -gt 8 ] && grep -qE '4WAY_HANDSHAKE_TIMEOUT|WRONG_KEY|pre-shared key may be wrong' "$ilog" 2>/dev/null; then
             state="неверный пароль"; break
         fi
         sleep 1
@@ -574,7 +594,7 @@ cmd_connect() {
         sig=$(iw dev "$ifc" link 2>/dev/null | awk '/signal:/{print $2, $3; exit}')
         ok "подключено к '${ssid_now:-$ssid}'${sig:+, сигнал $sig} (за ${i} с)"
         have_ip "$ifc"
-        say "  сеть сохранена в $CONF; автоподключение при загрузке: wifi auto on"
+        say "  сеть сохранена в $CONF; для нескольких адаптеров (STA + AP): wifi-config"
         return 0
     fi
     say "  состояние: ${state:-не подключено} (через ${i} с)"
@@ -583,13 +603,178 @@ cmd_connect() {
     return 1
 }
 
+# --- Поддержка многоадаптерных профилей /etc/informer701-wifi/profiles/*.conf ---
+MULTI_DIR="/etc/informer701-wifi"
+MULTI_PROFS="$MULTI_DIR/profiles"
+
+have_multi_profiles() {
+    [ -d "$MULTI_PROFS" ] || return 1
+    local f
+    for f in "$MULTI_PROFS"/*.conf; do
+        [ -f "$f" ] && return 0
+    done
+    return 1
+}
+
+mprof_get() {
+    awk -v k="$2" 'index($0, k "=") == 1 { print substr($0, length(k) + 2); exit }' "$1" 2>/dev/null
+}
+
+sync_ap_nat_ifc() {
+    local ap_ifc="$1"
+    local gw
+    gw=$(ip route 2>/dev/null | awk -v cur="$ap_ifc" '/^default/ && $5 != cur {print $5; exit}')
+    [ -n "$gw" ] && command -v iptables >/dev/null 2>&1 || return 0
+    echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true
+    iptables -t nat -C POSTROUTING -o "$gw" -j MASQUERADE 2>/dev/null \
+        || iptables -t nat -A POSTROUTING -o "$gw" -j MASQUERADE
+    iptables -C FORWARD -i "$ap_ifc" -o "$gw" -j ACCEPT 2>/dev/null \
+        || iptables -A FORWARD -i "$ap_ifc" -o "$gw" -j ACCEPT
+    iptables -C FORWARD -i "$gw" -o "$ap_ifc" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null \
+        || iptables -A FORWARD -i "$gw" -o "$ap_ifc" -m state --state RELATED,ESTABLISHED -j ACCEPT
+}
+
+apply_sta_profile() {
+    local ifc="$1" pf="$2" wait_sec="${3:-30}"
+    local id ssid ipm sip sgw sdns wcfg
+    id=$(mprof_get "$pf" ID)
+    ssid=$(mprof_get "$pf" STA_SSID)
+    ipm=$(mprof_get "$pf" STA_IP_MODE)
+    sip=$(mprof_get "$pf" STA_IP)
+    sgw=$(mprof_get "$pf" STA_GW)
+    sdns=$(mprof_get "$pf" STA_DNS)
+    wcfg="$MULTI_DIR/wpa-${id}.conf"
+    [ -f "$wcfg" ] || /usr/local/bin/wifi-config gen-wpa "$pf"
+
+    stop_ap_ifc "$ifc"
+    if ! wpa_running "$ifc"; then
+        ip link set "$ifc" down 2>/dev/null || true
+        iw dev "$ifc" set type managed 2>/dev/null || true
+        ip link set "$ifc" up 2>/dev/null || true
+        apply_tx "$ifc"
+        start_wpa "$ifc" "$wcfg" || return 1
+    fi
+
+    local i=0
+    while [ "$i" -lt "$wait_sec" ]; do
+        assoc_ok "$ifc" && break
+        wpa_running "$ifc" || break
+        i=$((i + 1))
+        sleep 1
+    done
+    echo "sta:$id" > "$RUN/active-role.$ifc"
+    if assoc_ok "$ifc"; then
+        ok "$ifc (профиль $id) подключён к '${ssid}'"
+        if [ "$ipm" = "static" ] && [ -n "$sip" ]; then
+            dhcp_stop "$ifc"
+            ip -4 addr flush dev "$ifc" 2>/dev/null || true
+            ip addr add "$sip" dev "$ifc" 2>/dev/null || true
+            [ -n "$sgw" ] && ip route replace default via "$sgw" dev "$ifc" 2>/dev/null || true
+            [ -n "$sdns" ] && printf 'nameserver %s\n' "$sdns" > /etc/resolv.conf
+        else
+            [ -n "$(ip4_of "$ifc")" ] || dhcp_up "$ifc" || true
+        fi
+        return 0
+    fi
+    warn "$ifc (профиль $id): пока нет ассоциации с '$ssid' (фоновый повтор активен)"
+    return 0
+}
+
+apply_ap_profile() {
+    local ifc="$1" pf="$2"
+    local id ssid ch ap_cidr ap_ip ap_net nat hcfg
+    id=$(mprof_get "$pf" ID)
+    ssid=$(mprof_get "$pf" AP_SSID)
+    ch=$(mprof_get "$pf" AP_CHANNEL)
+    ap_cidr=$(mprof_get "$pf" AP_IP)
+    nat=$(mprof_get "$pf" AP_NAT)
+    [ -n "$ap_cidr" ] || ap_cidr="192.168.71.1/24"
+    ap_ip="${ap_cidr%/*}"
+    ap_net="${ap_ip%.*}"
+
+    command -v hostapd >/dev/null 2>&1 || die "не установлен hostapd"
+    stop_wpa "$ifc"
+    dhcp_stop "$ifc"
+    stop_ap_ifc "$ifc"
+
+    hcfg=$(/usr/local/bin/wifi-config gen-hostapd "$pf" "$ifc")
+    ip addr flush dev "$ifc" 2>/dev/null || true
+    ip link set "$ifc" down 2>/dev/null || true
+    ip link set "$ifc" up 2>/dev/null || true
+    ip addr add "$ap_cidr" dev "$ifc" 2>/dev/null || true
+
+    hostapd -B -P "$RUN/hostapd.$ifc.pid" "$hcfg" >/dev/null 2>&1 || {
+        warn "hostapd не стартовал на $ifc (канал $ch; проверьте 'wifi reg RU' и диапазон адаптера)"
+        return 1
+    }
+    ln -sfn "$RUN/hostapd.$ifc.pid" "$RUN/hostapd.pid" 2>/dev/null || true
+
+    if command -v dnsmasq >/dev/null 2>&1; then
+        dnsmasq --interface="$ifc" --except-interface=lo --bind-dynamic \
+            --dhcp-range="${ap_net}.50,${ap_net}.150,255.255.255.0,12h" \
+            --dhcp-option=3,"$ap_ip" --dhcp-option=6,"$ap_ip" --port=53 \
+            --dhcp-leasefile="$RUN/dnsmasq-ap.$ifc.leases" \
+            --pid-file="$RUN/dnsmasq-ap.$ifc.pid" >/dev/null 2>&1 || true
+    fi
+    echo "ap:$id" > "$RUN/active-role.$ifc"
+    [ "${nat:-1}" = "1" ] && sync_ap_nat_ifc "$ifc"
+    ok "точка доступа '$ssid' поднята на $ifc (к.$ch, $ap_cidr${nat:+, NAT=$nat})"
+    return 0
+}
+
+cmd_apply() {
+    need_root
+    load_stack; apply_reg
+    if ! have_multi_profiles; then
+        cmd_up
+        return $?
+    fi
+
+    local expected actual w=0
+    expected=$(ls -1 "$MULTI_PROFS"/*.conf 2>/dev/null | wc -l | tr -d ' ')
+    while [ "$w" -lt "${WIFI_WAIT:-12}" ]; do
+        actual=$(wl_count)
+        [ "$actual" -ge "$expected" ] && break
+        [ "$w" -eq 0 ] && say "[wifi] ожидаю перечисления USB Wi-Fi адаптеров ($actual из $expected)..."
+        sleep 1
+        w=$((w + 1))
+    done
+
+    local pairs line ifc pf id role any=0
+    pairs=$(/usr/local/bin/wifi-config match)
+    if [ -z "$pairs" ]; then
+        warn "ни один из настроенных в wifi-config адаптеров сейчас не подключён"
+        return 1
+    fi
+
+    # Сначала поднимаем все клиентские STA-адаптеры (чтобы появился маршрут в интернет),
+    # затем поднимаем все точки доступа AP и включаем NAT между ними!
+    while read -r ifc pf id role; do
+        [ -n "$ifc" ] && [ "$role" = "sta" ] || continue
+        any=1
+        apply_sta_profile "$ifc" "$pf" 30 || true
+    done <<< "$pairs"
+
+    while read -r ifc pf id role; do
+        [ -n "$ifc" ] && [ "$role" = "ap" ] || continue
+        any=1
+        apply_ap_profile "$ifc" "$pf" || true
+    done <<< "$pairs"
+
+    [ "$any" -eq 1 ]
+}
+
 cmd_up() {
     need_root
+    if have_multi_profiles; then
+        cmd_apply
+        return $?
+    fi
     local ifc
     ifc=$(require_wl "") || return 1
     ensure_conf; apply_reg
     if ! have_saved_nets; then
-        warn "в $CONF нет ни одной сохранённой сети - выполните 'wifi connect <SSID> <пароль>'"
+        warn "в $CONF нет ни одной сохранённой сети - выполните 'wifi connect <SSID> <пароль>' или 'wifi-config'"
         return 1
     fi
     if wpa_running "$ifc"; then
@@ -620,6 +805,36 @@ cmd_up() {
 cmd_daemon() {
     need_root
     trap 'cmd_down; exit 0' TERM INT
+    if have_multi_profiles; then
+        load_stack; apply_reg
+        cmd_apply || true
+        while :; do
+            sleep 10
+            local pairs ifc pf id role
+            pairs=$(/usr/local/bin/wifi-config match 2>/dev/null || true)
+            [ -n "$pairs" ] || continue
+            while read -r ifc pf id role; do
+                [ -n "$ifc" ] || continue
+                case "$role" in
+                    sta)
+                        if ! wpa_running "$ifc"; then
+                            apply_sta_profile "$ifc" "$pf" 15 || true
+                        elif assoc_ok "$ifc" && [ "$(mprof_get "$pf" STA_IP_MODE)" != "static" ] && [ -z "$(ip4_of "$ifc")" ]; then
+                            dhcp_up "$ifc" || true
+                        fi
+                        ;;
+                    ap)
+                        if ! ap_running "$ifc"; then
+                            apply_ap_profile "$ifc" "$pf" || true
+                        elif [ "$(mprof_get "$pf" AP_NAT)" = "1" ]; then
+                            sync_ap_nat_ifc "$ifc"
+                        fi
+                        ;;
+                esac
+            done <<< "$pairs"
+        done
+    fi
+
     cmd_up || exit 1
     local ifc
     ifc=$(wl_pick "" || echo "wlan0")
@@ -634,10 +849,15 @@ cmd_down() {
     for ifc in $(wl_list); do
         stop_wpa "$ifc"
         dhcp_stop "$ifc"
+        stop_ap_ifc "$ifc"
         ip addr flush dev "$ifc" 2>/dev/null || true
         ip route del default dev "$ifc" 2>/dev/null || true
-        ok "$ifc: wpa_supplicant и dhclient остановлены, адрес снят"
+        ip link set "$ifc" down 2>/dev/null || true
+        iw dev "$ifc" set type managed 2>/dev/null || true
+        ok "$ifc: остановлены службы STA/AP, адрес снят"
     done
+    [ -f "$RUN/hostapd.pid" ] && { kill "$(cat "$RUN/hostapd.pid" 2>/dev/null)" 2>/dev/null || true; rm -f "$RUN/hostapd.pid"; }
+    [ -f "$RUN/dnsmasq-ap.pid" ] && { kill "$(cat "$RUN/dnsmasq-ap.pid" 2>/dev/null)" 2>/dev/null || true; rm -f "$RUN/dnsmasq-ap.pid"; }
     [ -n "$(wl_list)" ] || say "беспроводных интерфейсов нет"
 }
 
@@ -645,17 +865,24 @@ cmd_status() {
     load_stack
     say "=== WiFi ==="
     say "  страна: $(cat "$REG_FILE" 2>/dev/null || echo 'не задана (iw reg get)')   автоподключение: $([ -f "$AUTO_FLAG" ] && echo ВКЛ || echo выкл)"
-    say "  сохранено сетей: $(count_saved_nets)"
+    say "  сохранено сетей ($CONF): $(count_saved_nets)   профилей адаптеров (wifi-config): $(ls -1 "$MULTI_PROFS"/*.conf 2>/dev/null | wc -l | tr -d ' ')"
     for ifc in $(wl_list); do
-        say "  --- $ifc: драйвер $(drv_of "$ifc"), USB $(usb_id_of "$ifc")"
-        local st
-        st=$(wcli "$ifc" status)
-        if [ -n "$st" ]; then
-            echo "$st" | awk -F= '/^(ssid|bssid|freq|key_mgmt|pairwise_cipher|group_cipher|wpa_state|ip_address)=/{printf "      %-17s %s\n", $1":", $2}'
+        say "  --- $ifc: драйвер $(drv_of "$ifc"), MAC $(cat "/sys/class/net/$ifc/address" 2>/dev/null || echo '?'), USB $(usb_id_of "$ifc")"
+        if ap_running "$ifc"; then
+            local ap_ssid ap_ch
+            ap_ssid=$(iw dev "$ifc" info 2>/dev/null | awk '/ssid/{print $2; exit}')
+            ap_ch=$(iw dev "$ifc" info 2>/dev/null | awk '/channel/{print $2; exit}')
+            say "      режим:         ТОЧКА ДОСТУПА (hostapd pid $(cat "$RUN/hostapd.$ifc.pid" 2>/dev/null), SSID '${ap_ssid:-?}', канал ${ap_ch:-?})"
         else
-            say "      wpa_supplicant не запущен"
+            local st
+            st=$(wcli "$ifc" status)
+            if [ -n "$st" ]; then
+                echo "$st" | awk -F= '/^(ssid|bssid|freq|key_mgmt|pairwise_cipher|group_cipher|wpa_state|ip_address)=/{printf "      %-17s %s\n", $1":", $2}'
+            else
+                say "      wpa_supplicant не запущен"
+            fi
+            iw dev "$ifc" link 2>/dev/null | sed -n '2,6p' | sed 's/^/      /'
         fi
-        iw dev "$ifc" link 2>/dev/null | sed -n '2,6p' | sed 's/^/      /'
         local a
         a=$(ip4_of "$ifc")
         say "      адрес:         ${a:-НЕТ (IPv4)}"
@@ -720,13 +947,15 @@ cmd_auto() {
     case "${1:-status}" in
         on)
             touch "$AUTO_FLAG"
-            has_systemd && systemctl enable informer701-wifi.service >/dev/null 2>&1 || true
+            if has_systemd && [ ! -e /etc/systemd/system/multi-user.target.wants/informer701-wifi.service ]; then
+                systemctl enable informer701-wifi.service >/dev/null 2>&1 || true
+            fi
             ok "автоподключение при загрузке ВКЛЮЧЕНО ($AUTO_FLAG)"
             ensure_conf
-            have_saved_nets || warn "в $CONF нет сохранённых сетей - сначала wifi connect" ;;
+            have_saved_nets || have_multi_profiles || warn "нет сохранённых сетей - выполните wifi connect или wifi-config" ;;
         off)
             rm -f "$AUTO_FLAG"
-            has_systemd && systemctl disable informer701-wifi.service >/dev/null 2>&1 || true
+            has_systemd && systemctl stop informer701-wifi.service >/dev/null 2>&1 || true
             ok "автоподключение выключено" ;;
         *)
             say "автоподключение: $([ -f "$AUTO_FLAG" ] && echo ВКЛЮЧЕНО || echo выключено)"
@@ -804,22 +1033,23 @@ phy_of() {
 cmd_ap() {
     need_root
     case "${1:-}" in
-        off) cmd_ap_off; return 0 ;;
-        "")  say "использование: wifi ap <SSID> [пароль] [канал 1..13|36..165] [iface]"; say "остановить: wifi ap off"; return 0 ;;
+        off) shift; cmd_ap_off "$@"; return 0 ;;
+        "")  say "использование: wifi ap <SSID> [пароль] [канал 1..13|36..165] [iface]"; say "остановить: wifi ap off [iface]"; return 0 ;;
     esac
     local ssid="$1" pass="${2:-}" ch="${3:-6}" req_ifc="${4:-}"
-    local ifc hw_mode phy phy_info
+    local ifc hw_mode phy phy_info hconf
     ifc=$(require_wl "$req_ifc") || return 1
     command -v hostapd >/dev/null 2>&1 || die "нет hostapd"
     load_stack; apply_reg
-    [ -f "$RUN/hostapd.pid" ] && cmd_ap_off
+    stop_ap_ifc "$ifc"
     stop_wpa "$ifc"; dhcp_stop "$ifc"
     ip addr flush dev "$ifc" 2>/dev/null || true
     hw_mode=$(ap_hw_mode_for_chan "$ch")
     phy=$(phy_of "$ifc")
     phy_info=""
     [ -n "$phy" ] && phy_info=$(iw phy "$phy" info 2>/dev/null || true)
-    mkdir -p "$(dirname "$HOSTAPD_CONF")" "$RUN"
+    hconf="/etc/hostapd/informer-ap-${ifc}.conf"
+    mkdir -p "$(dirname "$hconf")" "$RUN"
     {
         echo "interface=$ifc"
         echo "driver=nl80211"
@@ -842,49 +1072,51 @@ cmd_ap() {
             echo "rsn_pairwise=CCMP"
         fi
         echo "ignore_broadcast_ssid=0"
-    } > "$HOSTAPD_CONF"
-    chmod 600 "$HOSTAPD_CONF"
+    } > "$hconf"
+    chmod 600 "$hconf"
+    ln -sfn "$hconf" "$HOSTAPD_CONF" 2>/dev/null || true
     ip addr add "$AP_IP/24" dev "$ifc" 2>/dev/null || true
     ip link set "$ifc" up 2>/dev/null || true
-    hostapd -B -P "$RUN/hostapd.pid" "$HOSTAPD_CONF" >/dev/null 2>&1 \
+    hostapd -B -P "$RUN/hostapd.$ifc.pid" "$hconf" >/dev/null 2>&1 \
         || die "hostapd не стартовал на $ifc (канал $ch, hw_mode=$hw_mode; проверьте 'iw list' / 'wifi reg')"
+    ln -sfn "$RUN/hostapd.$ifc.pid" "$RUN/hostapd.pid" 2>/dev/null || true
     if command -v dnsmasq >/dev/null 2>&1; then
-        [ -f "$RUN/dnsmasq-ap.pid" ] && kill "$(cat "$RUN/dnsmasq-ap.pid")" 2>/dev/null || true
+        [ -f "$RUN/dnsmasq-ap.$ifc.pid" ] && kill "$(cat "$RUN/dnsmasq-ap.$ifc.pid")" 2>/dev/null || true
         dnsmasq --interface="$ifc" --except-interface=lo --bind-dynamic \
             --dhcp-range="$AP_NET.50,$AP_NET.150,255.255.255.0,12h" \
             --dhcp-option=3,"$AP_IP" --dhcp-option=6,"$AP_IP" --port=53 \
-            --dhcp-leasefile="$RUN/dnsmasq-ap.leases" \
-            --pid-file="$RUN/dnsmasq-ap.pid" >/dev/null 2>&1 \
+            --dhcp-leasefile="$RUN/dnsmasq-ap.$ifc.leases" \
+            --pid-file="$RUN/dnsmasq-ap.$ifc.pid" >/dev/null 2>&1 \
             && ok "DHCP+DNS на $ifc: адреса $AP_NET.50-$AP_NET.150"
     fi
     local band_str="2.4 ГГц"
     [ "$hw_mode" = "a" ] && band_str="5 ГГц"
     ok "точка доступа '$ssid' на $ifc ($band_str, канал $ch), адрес платы $AP_IP/24"
-    local gw
-    gw=$(ip route 2>/dev/null | awk -v cur="$ifc" '/^default/ && $5 != cur {print $5; exit}')
-    if [ -n "$gw" ] && command -v iptables >/dev/null 2>&1; then
-        echo 1 > /proc/sys/net/ipv4/ip_forward
-        iptables -t nat -C POSTROUTING -o "$gw" -j MASQUERADE 2>/dev/null \
-            || iptables -t nat -A POSTROUTING -o "$gw" -j MASQUERADE
-        iptables -C FORWARD -i "$ifc" -o "$gw" -j ACCEPT 2>/dev/null \
-            || iptables -A FORWARD -i "$ifc" -o "$gw" -j ACCEPT
-        iptables -C FORWARD -i "$gw" -o "$ifc" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null \
-            || iptables -A FORWARD -i "$gw" -o "$ifc" -m state --state RELATED,ESTABLISHED -j ACCEPT
-        ok "клиентам точки доступа раздаётся интернет через $gw (NAT)"
-    fi
+    sync_ap_nat_ifc "$ifc"
 }
 
 cmd_ap_off() {
     need_root
-    [ -f "$RUN/hostapd.pid" ] && kill "$(cat "$RUN/hostapd.pid")" 2>/dev/null || true
-    [ -f "$RUN/dnsmasq-ap.pid" ] && kill "$(cat "$RUN/dnsmasq-ap.pid")" 2>/dev/null || true
-    rm -f "$RUN/hostapd.pid" "$RUN/dnsmasq-ap.pid" "$RUN/dnsmasq-ap.leases"
+    local target="${1:-}"
+    if [ -n "$target" ]; then
+        stop_ap_ifc "$target"
+        ip addr flush dev "$target" 2>/dev/null || true
+        ip link set "$target" down 2>/dev/null || true
+        iw dev "$target" set type managed 2>/dev/null || true
+        ok "точка доступа на $target остановлена"
+        return 0
+    fi
     for ifc in $(wl_list); do
-        ip addr flush dev "$ifc" 2>/dev/null || true
-        ip link set "$ifc" down 2>/dev/null || true
-        iw dev "$ifc" set type managed 2>/dev/null || true
+        if ap_running "$ifc" || [ -f "$RUN/hostapd.$ifc.pid" ]; then
+            stop_ap_ifc "$ifc"
+            ip addr flush dev "$ifc" 2>/dev/null || true
+            ip link set "$ifc" down 2>/dev/null || true
+            iw dev "$ifc" set type managed 2>/dev/null || true
+        fi
     done
-    echo 0 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true
+    [ -f "$RUN/hostapd.pid" ] && kill "$(cat "$RUN/hostapd.pid" 2>/dev/null)" 2>/dev/null || true
+    [ -f "$RUN/dnsmasq-ap.pid" ] && kill "$(cat "$RUN/dnsmasq-ap.pid" 2>/dev/null)" 2>/dev/null || true
+    rm -f "$RUN/hostapd.pid" "$RUN/dnsmasq-ap.pid" "$RUN/dnsmasq-ap.leases"
     ok "точка доступа остановлена"
 }
 
@@ -964,9 +1196,12 @@ wifi - USB-WiFi адаптер на Informer 701 (разъём на месте W
   wifi ps on|off|status    power save драйвера
   wifi reg [RU|US|...]     регуляторный домен страны
   wifi auto on|off|status  автоподключение при загрузке (systemd)
+  wifi config              конфигуратор ролей нескольких адаптеров (STA + AP,
+                           сохранение между перезагрузками; то же: wifi-config)
+  wifi apply               применить сохранённые профили wifi-config прямо сейчас
   wifi ap SSID [пароль] [канал] [iface]
                            точка доступа 2.4/5 ГГц (hostapd + dnsmasq 192.168.71.x)
-  wifi ap off              остановить точку доступа
+  wifi ap off [iface]      остановить точку доступа
   wifi share [on|off]      раздать интернет с WiFi на ПК по micro-USB (NAT)
 EOF
 }
@@ -975,6 +1210,8 @@ cmd="${1:-help}"
 shift 2>/dev/null || true
 mkdir -p "$RUN" 2>/dev/null || true
 case "$cmd" in
+    config|cfg)    exec /usr/local/bin/wifi-config "$@" ;;
+    apply)         cmd_apply ;;
     dev|devices)   cmd_dev ;;
     scan|sc)       cmd_scan "$@" ;;
     connect|con)   cmd_connect "$@" ;;
