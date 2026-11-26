@@ -1,16 +1,13 @@
-#!/bin/sh
+#!/bin/bash
 # pmic-regs - дамп и дешифровка AXP209 (шина определяется через i2cbus)
-#
-# Карта регистров AXP209 (по drivers/mfd/axp20x.h из Linux):
-#   0x00 power input status      0x01 power mode      0x03 CHIP ID (=0x21)
-#   0x12 power output control    0x23 DCDC2 Vout      0x25 DCDC2/LDO3 workmode
-#   0x27 DCDC3 Vout              0x28 LDO2(hi)/LDO4(lo) Vout
-#   0x29 LDO3 Vout               0x32 power supply indication
-#   0x39 shutdown/power-key      0x82 ADC enable
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
 BUS=$(i2cbus); ADDR=0x34
 
-rd() { i2cget -f -y $BUS $ADDR "$1" 2>/dev/null; }
+rd() { i2cget -f -y "$BUS" "$ADDR" "$1" 2>/dev/null || true; }
 show() {
+    local v
     v=$(rd "$1")
     if [ -n "$v" ]; then printf '  %-6s %-28s = %s\n' "$1" "$2" "$v"
     else                 printf '  %-6s %-28s = *** НЕТ ОТВЕТА ***\n' "$1" "$2"; fi
@@ -53,10 +50,10 @@ d=$(rd 0x29)
 
 d=$(rd 0x12)
 if [ -n "$d" ]; then
-    on()  { [ $(( ($d >> $1) & 1 )) -eq 1 ] && echo ВКЛ || echo выкл; }
+    bit_on() { [ $(( (d >> $1) & 1 )) -eq 1 ] && echo ВКЛ || echo выкл; }
     echo "  power output control (raw $d):"
     printf '    DCDC2 %s  DCDC3 %s  LDO2 %s  LDO3 %s  LDO4 %s  EXTEN %s\n' \
-        "$(on 4)" "$(on 0)" "$(on 1)" "$(on 6)" "$(on 2)" "$(on 3)"
+        "$(bit_on 4)" "$(bit_on 0)" "$(bit_on 1)" "$(bit_on 6)" "$(bit_on 2)" "$(bit_on 3)"
 fi
 
 d=$(rd 0x00)
@@ -77,6 +74,6 @@ fi
 
 echo
 echo "=== полный дамп 0x00-0x3f ==="
-i2cdump -y -f $BUS $ADDR 2>&1 | head -8
+i2cdump -y -f "$BUS" "$ADDR" 2>&1 | head -8
 echo "=== полный дамп 0x80-0x8f (ADC enable / IRQ) ==="
-i2cdump -y -f -r 0x80-0x8f $BUS $ADDR 2>&1 | head -5
+i2cdump -y -f -r 0x80-0x8f "$BUS" "$ADDR" 2>&1 | head -5

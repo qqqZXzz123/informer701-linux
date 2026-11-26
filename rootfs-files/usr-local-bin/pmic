@@ -1,23 +1,24 @@
-#!/bin/sh
+#!/bin/bash
 # pmic [N] - проверка стабильности шины I2C0 и ответа AXP209 (адрес 0x34).
-# Читает CHIP ID N раз подряд и считает успехи/отказы.
-# Это главный тест: если FAIL > 0 - контакт/подтяжки PB0(SCK)/PB1(SDA) плохие.
-N=${1:-100}
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+N="${1:-100}"
 BUS=$(i2cbus)
 ADDR=0x34
 ok=0; fail=0; i=1
 echo "Шина I2C с AXP209: /dev/i2c-$BUS"
 echo "Читаю AXP209 (bus $BUS, addr $ADDR, reg 0x03 = CHIP ID) $N раз..."
-while [ $i -le "$N" ]; do
-    v=$(i2cget -f -y $BUS $ADDR 0x03 2>/dev/null)
+while [ "$i" -le "$N" ]; do
+    v=$(i2cget -f -y "$BUS" "$ADDR" 0x03 2>/dev/null || true)
     if [ -n "$v" ]; then
         ok=$((ok + 1))
-        if [ $i -le 5 ] || [ $((i % 25)) -eq 0 ]; then
-            echo "  read #$(printf '%3d' $i): CHIP ID = $v"
+        if [ "$i" -le 5 ] || [ $((i % 25)) -eq 0 ]; then
+            echo "  read #$(printf '%3d' "$i"): CHIP ID = $v"
         fi
     else
         fail=$((fail + 1))
-        echo "  read #$(printf '%3d' $i): *** ОШИБКА ЧТЕНИЯ (шина не ответила) ***"
+        echo "  read #$(printf '%3d' "$i"): *** ОШИБКА ЧТЕНИЯ (шина не ответила) ***"
     fi
     i=$((i + 1))
 done
@@ -30,4 +31,4 @@ else
 fi
 echo
 echo "Сканирование всей шины:"
-i2cdetect -y $BUS 2>&1 | head -12
+i2cdetect -y "$BUS" 2>&1 | head -12

@@ -1,23 +1,27 @@
-#!/bin/sh
-# info - короткая сводка по плате
+#!/bin/bash
+# info - короткая сводка по плате Informer 701 (Debian 12 Bookworm armhf)
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH LC_NUMERIC=C
+
 echo "Informer 701 (N708H6, Allwinner A10)   build $(cat /etc/build-id 2>/dev/null)"
 echo "---------------------------------------------------------------------"
+printf '%-14s %s\n' "система:"   "$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-Debian}" || echo Debian)"
 printf '%-14s %s\n' "ядро:"      "$(uname -r)  $(uname -v | cut -c1-40)"
-printf '%-14s %s\n' "модель DT:" "$(cat /proc/device-tree/model 2>/dev/null | tr -d '\0')"
+printf '%-14s %s\n' "модель DT:" "$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)"
 printf '%-14s %s\n' "cmdline:"   "$(cat /proc/cmdline)"
 printf '%-14s %s\n' "uptime:"    "$(cut -d' ' -f1 /proc/uptime) c"
-printf '%-14s %s\n' "память:"    "$(awk '/MemTotal/{printf "%d МиБ", $2/1024}' /proc/meminfo)"
+printf '%-14s %s\n' "память:"    "$(awk '/MemTotal/{printf "%d МиБ", $2/1024}' /proc/meminfo) (zram: $(awk 'NR>1{printf "%d МиБ", $3/1024; exit}' /proc/swaps 2>/dev/null || echo 'нет'))"
 printf '%-14s %s\n' "корень:"    "$(awk '$2=="/"{print $1" ("$3")"}' /proc/mounts)"
 CF=/sys/devices/system/cpu/cpu0/cpufreq
 if [ -d "$CF" ]; then
-    printf '%-14s %s\n' "CPU частота:" "$(cat $CF/scaling_cur_freq) kHz ($(cat $CF/scaling_governor))"
+    printf '%-14s %s\n' "CPU частота:" "$(cat "$CF/scaling_cur_freq") kHz ($(cat "$CF/scaling_governor"))"
 else
     printf '%-14s %s\n' "CPU частота:" "не управляется ядром (фиксирована SPL)"
 fi
-Z=/sys/class/thermal/thermal_zone0
-[ -d "$Z" ] && printf '%-14s %s\n' "температура:" "$(cat $Z/temp 2>/dev/null) m°C ($(cat $Z/type 2>/dev/null))"
-printf '%-14s %s\n' "AXP209:" "$(i2cget -f -y 0 0x34 0x03 2>/dev/null || echo 'не отвечает')"
+WDT_OPEN="выкл"
+readlink /proc/1/fd/* 2>/dev/null | grep -q '^/dev/watchdog' && WDT_OPEN="активен (PID 1 systemd)"
+WDT_REG=$(devmem2 0x01c20c94 w 2>/dev/null | awk '/Read at address/{print $NF}')
+printf '%-14s %s\n' "watchdog:"  "$WDT_OPEN (WDOG_MODE=${WDT_REG:-?})"
+printf '%-14s %s\n' "AXP209:"    "$(i2cget -f -y 0 0x34 0x03 2>/dev/null || echo 'не отвечает')"
 echo
-echo "Команды: diag  pmic  pmic-regs  clk  regs  memtest  cftest  info"
-echo "Меню загрузки: cat /boot/extlinux/extlinux.conf"
-echo "Записать лог на boot-раздел (видно с ПК): diag > /boot/diag.txt && sync"
+echo "Команды: diag  usbnet  wifi  pkg  accel  pmic  pmic-regs  pmic-vbus  wdt  clk  regs  memtest  cftest  info"

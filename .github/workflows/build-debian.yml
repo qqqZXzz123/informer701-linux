@@ -1,0 +1,154 @@
+name: Build & Test Debian 12 (armhf) SD Image
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      BUILD:
+        description: 'Идентификатор сборки (опционально, например: debian12 или b028)'
+        required: false
+        default: ''
+        type: string
+      from_source:
+        description: 'Пересобрать U-Boot 2024.10 и ядро Linux 6.6 с нуля (scripts/build-all.sh)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+
+jobs:
+  build-and-test:
+    name: Build Debian 12 armhf & QEMU Self-Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      COPYTO: /tmp/out-debian
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine BUILD identifier
+        env:
+          INPUT_BUILD: ${{ inputs.BUILD }}
+        run: |
+          if [ -n "${INPUT_BUILD:-}" ]; then
+            CLEAN_BUILD=$(printf '%s' "$INPUT_BUILD" | tr -cd 'A-Za-z0-9._-')
+          elif [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            CLEAN_BUILD="${GITHUB_REF_NAME}"
+          else
+            CLEAN_BUILD="debian12-${GITHUB_SHA::7}"
+          fi
+          [ -n "$CLEAN_BUILD" ] || CLEAN_BUILD="debian12"
+          echo "BUILD=${CLEAN_BUILD}" >> "$GITHUB_ENV"
+          echo "Selected BUILD=${CLEAN_BUILD}"
+
+      - name: Set up QEMU static binfmt_misc for ARM
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+
+      - name: Install host build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            debootstrap \
+            debian-archive-keyring \
+            qemu-user-static \
+            qemu-system-arm \
+            binfmt-support \
+            dosfstools \
+            mtools \
+            e2fsprogs \
+            fdisk \
+            cpio \
+            xz-utils \
+            openssl \
+            kmod \
+            device-tree-compiler \
+            u-boot-tools \
+            python3 \
+            gcc-arm-linux-gnueabihf \
+            libc6-dev-armhf-cross \
+            bc \
+            bison \
+            flex \
+            swig \
+            libssl-dev \
+            libelf-dev \
+            curl \
+            ca-certificates
+
+      - name: Verify binfmt_misc registration for armhf chroot
+        run: |
+          if [ ! -e /proc/sys/fs/binfmt_misc/qemu-arm ] && [ ! -e /proc/sys/fs/binfmt_misc/arm ]; then
+            sudo update-binfmts --enable qemu-arm || sudo /usr/lib/systemd/systemd-binfmt || true
+          fi
+          ls -la /proc/sys/fs/binfmt_misc/
+          grep -E 'enabled|interpreter|flags' /proc/sys/fs/binfmt_misc/qemu-arm /proc/sys/fs/binfmt_misc/arm 2>/dev/null || true
+          arm-linux-gnueabihf-gcc -static -x c - -o /tmp/binfmt-check <<< 'int main(void) { return 0; }'
+          /tmp/binfmt-check
+          rm -f /tmp/binfmt-check
+          /usr/bin/qemu-arm-static -L /usr/arm-linux-gnueabihf ./prebuilt/devmem2 --version
+
+      - name: Build Debian 12 (Bookworm) armhf SD image
+        env:
+          INPUT_FROM_SOURCE: ${{ inputs.from_source }}
+        run: |
+          mkdir -p "$COPYTO"
+          if [ "${INPUT_FROM_SOURCE:-false}" = "true" ]; then
+            sudo BUILD="$BUILD" COPYTO="$COPYTO" bash scripts/build-all.sh
+          else
+            sudo BUILD="$BUILD" COPYTO="$COPYTO" bash scripts/build-image.sh
+          fi
+          sudo chown -R "$(id -u):$(id -g)" "$COPYTO"
+          ls -lh "$COPYTO"
+          test -s "$COPYTO/informer701-${BUILD}.img.xz"
+          test -s "$COPYTO/informer701-${BUILD}.sha256"
+
+      - name: Run automated QEMU verification (systemd PID 1)
+        run: |
+          sudo BUILD="$BUILD" COPYTO="$COPYTO" SAVE_LOG="$COPYTO/qtest-pass.log" bash scripts/qemu-test.sh
+          sudo chown -R "$(id -u):$(id -g)" "$COPYTO"
+          test -s "$COPYTO/qtest-pass.log"
+          grep -q "QTEST_RESULT: PASS" "$COPYTO/qtest-pass.log"
+
+      - name: Upload SD image, SHA256 and QEMU log to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: informer701-${{ env.BUILD }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            /tmp/out-debian/*.img.xz
+            /tmp/out-debian/*.sha256
+            /tmp/out-debian/qtest-pass.log
+
+      - name: Create GitHub Release on version tags
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body: |
+            Готовый загрузочный образ **Debian 12 (Bookworm) `armhf`** (`glibc`, `bash`, `systemd`, `apt`, Linux 6.6.0, U-Boot 2024.10) для платы **Explay Informer 701** (`N708H6`, Allwinner A10, 512 МиБ ОЗУ).
+
+            Проверен автоматическим стендом `qemu-test.sh` (51 проверка: `QTEST_RESULT: PASS`).
+
+            **Запись на карту microSD:**
+            ```bash
+            xz -dc informer701-${{ env.BUILD }}.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
+            ```
+          files: |
+            /tmp/out-debian/*.img.xz
+            /tmp/out-debian/*.sha256

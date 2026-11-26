@@ -1,697 +1,580 @@
-# Прогон scripts/qemu-test.sh для этого набора (2026-11-01, ядро набора = b027).
-# Команда: BUILD=<имя> bash scripts/qemu-test.sh   ->  QTEST RESULT: PASS, 0 провалов.
-# Фикстуры в scripts/qtest-init.sh анонимизированы (MAC 00:11:22:33:44:55, SSID ExampleNet).
+[    0.000000] Booting Linux on physical CPU 0x0
+[    0.000000] Linux version 6.6.0 (root@c-6ae5f7d0-01b29cc4-de6a90fa7491) (arm-linux-gnueabihf-gcc (Debian 12.2.0-14) 12.2.0, GNU ld (GNU Binutils for Debian) 2.40) #1 SMP Sat Oct 31 16:41:38 UTC 2026
+[    0.000000] CPU: ARMv7 Processor [410fc080] revision 0 (ARMv7), cr=10c5387d
+[    0.000000] CPU: PIPT / VIPT nonaliasing data cache, VIPT nonaliasing instruction cache
+[    0.000000] OF: fdt: Machine model: Informer 701 (N708H6) - no PMIC
+[    0.000000] Memory policy: Data cache writeback
+[    0.000000] Reserved memory: created CMA memory pool at 0x4a000000, size 96 MiB
+[    0.000000] OF: reserved mem: initialized node default-pool, compatible id shared-dma-pool
+[    0.000000] OF: reserved mem: 0x4a000000..0x4fffffff (98304 KiB) map reusable default-pool
+[    0.000000] Zone ranges:
+[    0.000000]   Normal   [mem 0x0000000040000000-0x000000005fffffff]
+[    0.000000]   HighMem  empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000040000000-0x000000005fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000040000000-0x000000005fffffff]
+[    0.000000] CPU: All CPU(s) started in SVC mode.
+[    0.000000] percpu: Embedded 12 pages/cpu s16660 r8192 d24300 u49152
+[    0.000000] Kernel command line: console=ttyS0,115200 root=/dev/mmcblk0p2 rootfstype=ext4 rootwait rw panic=5 net.ifnames=0 systemd.show_status=true
+[    0.000000] Dentry cache hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 32768 (order: 5, 131072 bytes, linear)
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 130048
+[    0.000000] mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[    0.000000] Memory: 408688K/524288K available (7168K kernel code, 858K rwdata, 2000K rodata, 1024K init, 262K bss, 17296K reserved, 98304K cma-reserved, 0K highmem)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=1, Nodes=1
+[    0.000000] rcu: Hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=8 to nr_cpu_ids=1.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 10 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=1
+[    0.000000] NR_IRQS: 16, nr_irqs: 16, preallocated irqs: 16
+[    0.000000] rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[    0.000200] sched_clock: 32 bits at 24MHz, resolution 41ns, wraps every 89478484971ns
+[    0.000628] clocksource: timer: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 79635851949 ns
+[    0.007402] Console: colour dummy device 80x30
+[    0.008922] Calibrating delay loop... 1546.64 BogoMIPS (lpj=7733248)
+[    0.236186] CPU: Testing write buffer coherency: ok
+[    0.238436] CPU0: Spectre v2: firmware did not set auxiliary control register IBE bit, system vulnerable
+[    0.238552] pid_max: default: 32768 minimum: 301
+[    0.242662] Mount-cache hash table entries: 1024 (order: 0, 4096 bytes, linear)
+[    0.242776] Mountpoint-cache hash table entries: 1024 (order: 0, 4096 bytes, linear)
+[    0.275004] CPU0: thread -1, cpu 0, socket -1, mpidr 0
+[    0.283943] Setting up static identity map for 0x40100000 - 0x40100060
+[    0.285212] rcu: Hierarchical SRCU implementation.
+[    0.285259] rcu: 	Max phase no-delay instances is 1000.
+[    0.288762] smp: Bringing up secondary CPUs ...
+[    0.289408] smp: Brought up 1 node, 1 CPU
+[    0.289503] SMP: Total of 1 processors activated (1546.64 BogoMIPS).
+[    0.289529] CPU: All CPU(s) started in SVC mode.
+[    0.301897] devtmpfs: initialized
+[    0.317231] VFP support v0.3: implementor 41 architecture 3 part 30 variant c rev 0
+[    0.336644] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 19112604462750000 ns
+[    0.337360] futex hash table entries: 256 (order: 2, 16384 bytes, linear)
+[    0.345210] pinctrl core: initialized pinctrl subsystem
+[    0.378838] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[    0.391336] DMA: preallocated 256 KiB pool for atomic coherent allocations
+[    0.395468] thermal_sys: Registered thermal governor 'step_wise'
+[    0.395887] hw-breakpoint: debug architecture 0x4 unsupported.
+[    0.426878] platform 1e40000.display-backend: Fixed dependency cycle(s) with /soc/lcd-controller@1c0d000/ports/port@0/endpoint@1
+[    0.427315] platform 1e40000.display-backend: Fixed dependency cycle(s) with /soc/lcd-controller@1c0c000/ports/port@0/endpoint@1
+[    0.427362] platform 1e40000.display-backend: Fixed dependency cycle(s) with /soc/display-frontend@1e20000/ports/port@1/endpoint@1
+[    0.427401] platform 1e40000.display-backend: Fixed dependency cycle(s) with /soc/display-frontend@1e00000/ports/port@1/endpoint@1
+[    0.427910] platform 1e60000.display-backend: Fixed dependency cycle(s) with /soc/lcd-controller@1c0d000/ports/port@0/endpoint@0
+[    0.427990] platform 1e60000.display-backend: Fixed dependency cycle(s) with /soc/lcd-controller@1c0c000/ports/port@0/endpoint@0
+[    0.428048] platform 1e60000.display-backend: Fixed dependency cycle(s) with /soc/display-frontend@1e20000/ports/port@1/endpoint@0
+[    0.428103] platform 1e60000.display-backend: Fixed dependency cycle(s) with /soc/display-frontend@1e00000/ports/port@1/endpoint@0
+[    0.443508] SCSI subsystem initialized
+[    0.444385] usbcore: registered new interface driver usbfs
+[    0.444613] usbcore: registered new interface driver hub
+[    0.444781] usbcore: registered new device driver usb
+[    0.445373] pps_core: LinuxPPS API ver. 1 registered
+[    0.445393] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    0.445467] PTP clock support registered
+[    0.469948] clocksource: Switched to clocksource timer
+[    0.498927] NET: Registered PF_INET protocol family
+[    0.500652] IP idents hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[    0.505835] tcp_listen_portaddr_hash hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.506039] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    0.506182] TCP established hash table entries: 4096 (order: 2, 16384 bytes, linear)
+[    0.506380] TCP bind hash table entries: 4096 (order: 4, 65536 bytes, linear)
+[    0.506570] TCP: Hash tables configured (established 4096 bind 4096)
+[    0.508404] UDP hash table entries: 256 (order: 1, 8192 bytes, linear)
+[    0.508647] UDP-Lite hash table entries: 256 (order: 1, 8192 bytes, linear)
+[    0.509891] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    0.524567] hw perfevents: enabled with armv7_cortex_a8 PMU driver, 5 counters available
+[    0.527415] Initialise system trusted keyrings
+[    0.554356] workingset: timestamp_bits=30 max_order=17 bucket_order=0
+[    0.556486] Key type asymmetric registered
+[    0.556571] Asymmetric key parser 'x509' registered
+[    0.556863] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 248)
+[    0.556994] io scheduler mq-deadline registered
+[    0.557053] io scheduler kyber registered
+[    0.557203] io scheduler bfq registered
+[    1.137390] Serial: 8250/16550 driver, 8 ports, IRQ sharing disabled
+[    1.230456] loop: module loaded
+[    1.235017] tun: Universal TUN/TAP device driver, 1.6
+[    1.266631] usbcore: registered new interface driver catc
+[    1.266719] usbcore: registered new interface driver kaweth
+[    1.266772] usbcore: registered new interface driver asix
+[    1.266818] usbcore: registered new interface driver ax88179_178a
+[    1.266863] usbcore: registered new interface driver cdc_ether
+[    1.266904] usbcore: registered new interface driver rndis_host
+[    1.267041] usbcore: registered new interface driver cdc_ncm
+[    1.267090] usbcore: registered new interface driver aqc111
+[    1.274758] usbcore: registered new interface driver uas
+[    1.274937] usbcore: registered new interface driver usb-storage
+[    1.275296] usbcore: registered new interface driver usbserial_generic
+[    1.276325] usbserial: USB Serial support registered for generic
+[    1.276453] usbcore: registered new interface driver ch341
+[    1.276491] usbserial: USB Serial support registered for ch341-uart
+[    1.276537] usbcore: registered new interface driver cp210x
+[    1.276611] usbserial: USB Serial support registered for cp210x
+[    1.276656] usbcore: registered new interface driver ftdi_sio
+[    1.276700] usbserial: USB Serial support registered for FTDI USB Serial Device
+[    1.276751] usbcore: registered new interface driver pl2303
+[    1.276789] usbserial: USB Serial support registered for pl2303
+[    1.294712] sunxi-rtc 1c20d00.rtc: registered as rtc0
+[    1.295652] sunxi-rtc 1c20d00.rtc: setting system clock to 2026-11-25T18:18:37 UTC (1795630717)
+[    1.296305] i2c_dev: i2c /dev entries driver
+[    1.302599] sunxi-wdt 1c20c90.watchdog: Watchdog enabled (timeout=16 sec, nowayout=0)
+[    1.306089] sun4i-ss 1c15000.crypto-engine: no reset control found
+[    1.307663] sun4i-ss 1c15000.crypto-engine: Clock bus 12000000 (12 MHz) (must be >= 24000000)
+[    1.307725] sun4i-ss 1c15000.crypto-engine: Clock ss is at 600000000 (600 MHz) (must be <= 150000000)
+[    1.308441] sun4i-ss 1c15000.crypto-engine: Die ID 0
+[    1.310573] usbcore: registered new interface driver usbhid
+[    1.310598] usbhid: USB HID core driver
+[    1.313506] NET: Registered PF_INET6 protocol family
+[    1.336133] Segment Routing with IPv6
+[    1.336352] In-situ OAM (IOAM) with IPv6
+[    1.336744] sit: IPv6, IPv4 and MPLS over IPv4 tunneling driver
+[    1.339817] NET: Registered PF_PACKET protocol family
+[    1.340101] 8021q: 802.1Q VLAN Support v1.8
+[    1.340484] Key type dns_resolver registered
+[    1.340712] Registering SWP/SWPB emulation handler
+[    1.348535] Loading compiled-in X.509 certificates
+[    1.420735] gpio gpiochip0: Static allocation of GPIO base is deprecated, use dynamic allocation.
+[    1.443210] sun4i-pinctrl 1c20800.pinctrl: initialized sunXi PIO driver
+[    1.445795] sun4i-pinctrl 1c20800.pinctrl: supply vcc-pb not found, using dummy regulator
+[    1.456337] printk: console [ttyS0] disabled
+[    1.482235] 1c28000.serial: ttyS0 at MMIO 0x1c28000 (irq = 53, base_baud = 1500000) is a 16550A
+[    1.484625] printk: console [ttyS0] enabled
+[    3.608658] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
+[    3.609367] mma7660 1-004c: failed to read sensor mode
+[    3.610076] mma7660: probe of 1-004c failed with error -110
+[    3.619203] sun4i-pinctrl 1c20800.pinctrl: supply vcc-pf not found, using dummy regulator
+[    3.624248] sun4i-pinctrl 1c20800.pinctrl: supply vcc-ph not found, using dummy regulator
+[    3.633971] usb_phy_generic usb_phy_generic.0.auto: dummy supplies not allowed for exclusive requests
+[    3.639834] ------------[ cut here ]------------
+[    3.640039] WARNING: CPU: 0 PID: 40 at drivers/usb/musb/sunxi.c:406 sunxi_musb_ep_offset+0x4c/0x54
+[    3.640876] sunxi_musb_ep_offset called with non 0 offset
+[    3.641023] Modules linked in:
+[    3.641377] CPU: 0 PID: 40 Comm: kworker/u2:3 Not tainted 6.6.0 #1
+[    3.641619] Hardware name: Allwinner sun4i/sun5i Families
+[    3.642034] Workqueue: events_unbound deferred_probe_work_func
+[    3.642826]  unwind_backtrace from show_stack+0x10/0x14
+[    3.643045]  show_stack from dump_stack_lvl+0x40/0x4c
+[    3.643209]  dump_stack_lvl from __warn+0x84/0xc8
+[    3.643346]  __warn from warn_slowpath_fmt+0x124/0x190
+[    3.643530]  warn_slowpath_fmt from sunxi_musb_ep_offset+0x4c/0x54
+[    3.643674]  sunxi_musb_ep_offset from ep_config_from_hw+0xcc/0x150
+[    3.643815]  ep_config_from_hw from musb_probe+0xa08/0xcd8
+[    3.643940]  musb_probe from platform_probe+0x5c/0xb0
+[    3.644058]  platform_probe from really_probe+0xc8/0x2d8
+[    3.644197]  really_probe from __driver_probe_device+0x88/0x19c
+[    3.644326]  __driver_probe_device from driver_probe_device+0x30/0x104
+[    3.644456]  driver_probe_device from __device_attach_driver+0x94/0x108
+[    3.644587]  __device_attach_driver from bus_for_each_drv+0x90/0xe4
+[    3.644714]  bus_for_each_drv from __device_attach+0xa8/0x1a4
+[    3.644832]  __device_attach from bus_probe_device+0x88/0x8c
+[    3.644951]  bus_probe_device from device_add+0x5dc/0x7a8
+[    3.645063]  device_add from platform_device_add+0xec/0x1fc
+[    3.645202]  platform_device_add from platform_device_register_full+0x104/0x154
+[    3.645356]  platform_device_register_full from sunxi_musb_probe+0x218/0x3c0
+[    3.645498]  sunxi_musb_probe from platform_probe+0x5c/0xb0
+[    3.645615]  platform_probe from really_probe+0xc8/0x2d8
+[    3.645725]  really_probe from __driver_probe_device+0x88/0x19c
+[    3.645842]  __driver_probe_device from driver_probe_device+0x30/0x104
+[    3.646006]  driver_probe_device from __device_attach_driver+0x94/0x108
+[    3.646156]  __device_attach_driver from bus_for_each_drv+0x90/0xe4
+[    3.646297]  bus_for_each_drv from __device_attach+0xa8/0x1a4
+[    3.646419]  __device_attach from bus_probe_device+0x88/0x8c
+[    3.646534]  bus_probe_device from deferred_probe_work_func+0x78/0xa4
+[    3.646661]  deferred_probe_work_func from process_one_work+0x154/0x2ac
+[    3.646793]  process_one_work from worker_thread+0x290/0x4e8
+[    3.646907]  worker_thread from kthread+0xe0/0xfc
+[    3.647008]  kthread from ret_from_fork+0x14/0x28
+[    3.647174] Exception stack(0xe08adfb0 to 0xe08adff8)
+[    3.647366] dfa0:                                     00000000 00000000 00000000 00000000
+[    3.647530] dfc0: 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+[    3.647684] dfe0: 00000000 00000000 00000000 00000000 00000013 00000000
+[    3.647905] ---[ end trace 0000000000000000 ]---
+[    3.648249] musb-sunxi 1c13000.usb: Error unknown readb offset 128
+[    3.649234] musb-hdrc musb-hdrc.1.auto: error -EINVAL: musb_init_controller failed
+[    3.649587] musb-hdrc: probe of musb-hdrc.1.auto failed with error -22
+[    3.671499] ehci-platform 1c14000.usb: EHCI Host Controller
+[    3.672052] ehci-platform 1c14000.usb: new USB bus registered, assigned bus number 1
+[    3.674090] ehci-platform 1c1c000.usb: EHCI Host Controller
+[    3.674311] ehci-platform 1c1c000.usb: new USB bus registered, assigned bus number 2
+[    3.675846] ohci-platform 1c14400.usb: Generic Platform OHCI controller
+[    3.676044] ohci-platform 1c14400.usb: new USB bus registered, assigned bus number 3
+[    3.678514] ohci-platform 1c1c400.usb: Generic Platform OHCI controller
+[    3.678733] ohci-platform 1c1c400.usb: new USB bus registered, assigned bus number 4
+[    3.684335] ehci-platform 1c1c000.usb: irq 60, io mem 0x01c1c000
+[    3.685068] ohci-platform 1c1c400.usb: irq 62, io mem 0x01c1c400
+[    3.685668] ohci-platform 1c14400.usb: irq 61, io mem 0x01c14400
+[    3.686840] clk: Disabling unused clocks
+[    3.690564] sunxi-mmc 1c0f000.mmc: initialized, max. request size: 2048 KB
+[    3.697464] ehci-platform 1c14000.usb: irq 59, io mem 0x01c14000
+[    3.710759] mmc0: host does not support reading read-only switch, assuming write-enable
+[    3.712100] mmc0: new high speed SD card at address 2576
+[    3.713631] ehci-platform 1c1c000.usb: USB 2.0 started, EHCI 1.00
+[    3.719959] usb usb2: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 6.06
+[    3.720187] usb usb2: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    3.720345] usb usb2: Product: EHCI Host Controller
+[    3.720452] usb usb2: Manufacturer: Linux 6.6.0 ehci_hcd
+[    3.720556] usb usb2: SerialNumber: 1c1c000.usb
+[    3.725780] mmcblk0: mmc0:2576 QEMU! 512 MiB
+[    3.730222] hub 2-0:1.0: USB hub found
+[    3.738406] ehci-platform 1c14000.usb: USB 2.0 started, EHCI 1.00
+[    3.743938] hub 2-0:1.0: 6 ports detected
+[    3.750501] usb usb1: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 6.06
+[    3.750673] usb usb1: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    3.750789] usb usb1: Product: EHCI Host Controller
+[    3.750897] usb usb1: Manufacturer: Linux 6.6.0 ehci_hcd
+[    3.750986] usb usb1: SerialNumber: 1c14000.usb
+[    3.752909] hub 1-0:1.0: USB hub found
+[    3.753099] hub 1-0:1.0: 6 ports detected
+[    3.756216] usb usb3: New USB device found, idVendor=1d6b, idProduct=0001, bcdDevice= 6.06
+[    3.756440] usb usb3: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    3.756570] usb usb3: Product: Generic Platform OHCI controller
+[    3.756670] usb usb3: Manufacturer: Linux 6.6.0 ohci_hcd
+[    3.756760] usb usb3: SerialNumber: 1c14400.usb
+[    3.757827] hub 3-0:1.0: USB hub found
+[    3.760198]  mmcblk0: p1 p2
+[    3.762880] hub 3-0:1.0: 3 ports detected
+[    3.766408] usb usb4: New USB device found, idVendor=1d6b, idProduct=0001, bcdDevice= 6.06
+[    3.766571] usb usb4: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    3.766685] usb usb4: Product: Generic Platform OHCI controller
+[    3.766777] usb usb4: Manufacturer: Linux 6.6.0 ohci_hcd
+[    3.766860] usb usb4: SerialNumber: 1c1c400.usb
+[    3.776103] hub 4-0:1.0: USB hub found
+[    3.778349] hub 4-0:1.0: 3 ports detected
+[    3.853928] EXT4-fs (mmcblk0p2): mounted filesystem 8f1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8 r/w with ordered data mode. Quota mode: disabled.
+[    3.856336] VFS: Mounted root (ext4 filesystem) on device 179:2.
+[    3.861821] devtmpfs: mounted
+[    3.887102] Freeing unused kernel image (initmem) memory: 1024K
+[    3.889647] Run /sbin/init as init process
+[    6.562071] systemd[1]: Failed to find module 'autofs4'
+[    7.239378] systemd[1]: systemd 252.39-1~deb12u2 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR +IMA +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD -BPF_FRAMEWORK -XKBCOMMON +UTMP +SYSVINIT default-hierarchy=unified)
+[    7.240476] systemd[1]: Detected architecture arm.
 
-[    0.254120] CPU0: Spectre v2: firmware did not set auxiliary control register IBE bit, system vulnerable
-[    3.846255] i2c i2c-0: mv64xxx: I2C bus locked, block: 1, time_left: 0
-[    3.846942] axp20x-i2c 0-0034: Failed to set masks in 0x40: -110
-[    3.847263] axp20x-i2c 0-0034: failed to add irq chip: -110
-[   33.845159] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-[   33.849891] mma7660 1-004c: failed to read sensor mode
-[   45.137455] musb-sunxi 1c13000.usb: Error unknown readb offset 128
-[   45.139898] musb-hdrc musb-hdrc.1.auto: error -EINVAL: musb_init_controller failed
-[   46.530647] ehci-platform 1c14000.usb: can't setup: -110
-[   46.564687] ehci-platform 1c1c000.usb: can't setup: -110
-[   46.596637] ohci-platform 1c14400.usb: init err (00000000 0000)
-[   46.596958] ohci-platform 1c14400.usb: can't start
-[   46.598215] ohci-platform 1c14400.usb: startup error -75
-[   46.626663] ohci-platform 1c1c400.usb: init err (00000000 0000)
-[   46.627094] ohci-platform 1c1c400.usb: can't start
-[   46.627496] ohci-platform 1c1c400.usb: startup error -75
-mkdir: can't create directory '/sys/kernel/debug': Operation not permitted
-== QTEST build-id: pubtest ==
-Linux informer701 6.6.0 #1 SMP Sat Oct 31 16:41:38 UTC 2026 armv7l Linux
-cmdline: console=ttyS0,115200 loglevel=4 clk_ignore_unused rdinit=/init panic=1
-[1] автозагрузка модулей:
-  OK   /proc/sys/kernel/hotplug = /sbin/hotplug
-  OK   /sbin/hotplug исполняемый
-[2] устройства:
-  OK   /dev/urandom
-  OK   /dev/null
-  OK   /dev/console
-  OK   /dev/ttyS0
-[3] симлинки (цель должна существовать):
-  OK   /usr/local/bin/iptables-save -> /sbin/iptables-legacy-save
-  OK   /usr/local/bin/resize2fs -> /usr/sbin/resize2fs
-  OK   /usr/local/bin/hostapd_cli -> /usr/bin/hostapd_cli
-  OK   /usr/local/bin/ss -> /sbin/ss
-  OK   /usr/local/bin/iwlist -> /usr/sbin/iwlist
-  OK   /usr/local/bin/lzcat -> /usr/bin/lzcat
-  OK   /usr/local/bin/fsck.vfat -> /sbin/fsck.vfat
-  OK   /usr/local/bin/xz -> /usr/bin/xz
-  OK   /usr/local/bin/iw -> /usr/sbin/iw
-  OK   /usr/local/bin/ip6tables -> /sbin/ip6tables-legacy
-  OK   /usr/local/bin/dropbear -> /usr/sbin/dropbear
-  OK   /usr/local/bin/lsusb -> /usr/bin/lsusb
-  OK   /usr/local/bin/dnsmasq -> /usr/sbin/dnsmasq
-  OK   /usr/local/bin/nano -> /usr/bin/nano
-  OK   /usr/local/bin/tc -> /sbin/tc
-  OK   /usr/local/bin/ftpd -> /bin/busybox-extras
-  OK   /usr/local/bin/iptables -> /sbin/iptables-legacy
-  OK   /usr/local/bin/i2cdetect -> /usr/sbin/i2cdetect
-  OK   /usr/local/bin/fsck.ext4 -> /sbin/fsck.ext4
-  OK   /usr/local/bin/tcpsvd -> /bin/busybox-extras
-  OK   /usr/local/bin/iptables-restore -> /sbin/iptables-legacy-restore
-  OK   /usr/local/bin/udhcpd -> /bin/busybox-extras
-  OK   /usr/local/bin/mkfs.vfat -> /sbin/mkfs.vfat
-  OK   /usr/local/bin/i2cget -> /usr/sbin/i2cget
-  OK   /usr/local/bin/httpd -> /bin/busybox-extras
-  OK   /usr/local/bin/inetd -> /bin/busybox-extras
-  OK   /usr/local/bin/ip -> /sbin/ip
-  OK   /usr/local/bin/dumpleases -> /bin/busybox-extras
-  OK   /usr/local/bin/htop -> /usr/bin/htop
-  OK   /usr/local/bin/picocom -> /usr/bin/picocom
-  OK   /usr/local/bin/tftpd -> /bin/busybox-extras
-  OK   /usr/local/bin/telnetd -> /bin/busybox-extras
-  OK   /usr/local/bin/haveged -> /usr/sbin/haveged
-  OK   /usr/local/bin/iwconfig -> /usr/sbin/iwconfig
-  OK   /usr/local/bin/wpa_cli -> /sbin/wpa_cli
-  OK   /usr/local/bin/i2ctransfer -> /usr/sbin/i2ctransfer
-  OK   /usr/local/bin/hostapd -> /usr/sbin/hostapd
-  OK   /usr/local/bin/ssh -> /usr/bin/dbclient
-  OK   /usr/local/bin/mke2fs -> /sbin/mke2fs
-  OK   /usr/local/bin/i2cset -> /usr/sbin/i2cset
-  OK   /usr/local/bin/wpa_supplicant -> /sbin/wpa_supplicant
-  OK   /usr/local/bin/unxz -> /usr/bin/unxz
-  OK   /usr/local/bin/e2fsck -> /sbin/e2fsck
-  OK   /usr/local/bin/i2cdump -> /usr/sbin/i2cdump
-  OK   /usr/local/bin/usb-devices -> /usr/bin/usb-devices
-  OK   /usr/local/bin/mkfs.fat -> /sbin/mkfs.fat
-  OK   /usr/local/bin/tune2fs -> /usr/sbin/tune2fs
-  OK   /usr/local/bin/ip6tables-restore -> /sbin/ip6tables-legacy-restore
-  OK   /usr/local/bin/wpa_passphrase -> /sbin/wpa_passphrase
-  OK   /usr/local/bin/ip6tables-save -> /sbin/ip6tables-legacy-save
-  OK   /usr/local/bin/fsck.fat -> /sbin/fsck.fat
-  OK   /usr/local/bin/iwgetid -> /usr/sbin/iwgetid
-  OK   /sbin/iptables-save -> iptables-legacy-save
-  OK   /sbin/iptables-legacy -> xtables-legacy-multi
-  OK   /sbin/swapoff -> /bin/busybox
-  OK   /sbin/watchdog -> /bin/busybox
-  OK   /sbin/rtstat -> lnstat
-  OK   /sbin/sysctl -> /bin/busybox
-  OK   /sbin/losetup -> /bin/busybox
-  OK   /sbin/iptables-legacy-save -> xtables-legacy-multi
-  OK   /sbin/mkfs.ext4 -> mke2fs
-  OK   /sbin/adjtimex -> /bin/busybox
-  OK   /sbin/mkfs.ext2 -> mke2fs
-  OK   /sbin/ip6tables-apply -> iptables-apply
-  OK   /sbin/fdisk -> /bin/busybox
-  OK   /sbin/fsck.ext3 -> e2fsck
-  OK   /sbin/ifconfig -> /bin/busybox
-  OK   /sbin/ip6tables-legacy-save -> xtables-legacy-multi
-  OK   /sbin/acpid -> /bin/busybox
-  OK   /sbin/fsck.vfat -> fsck.fat
-  OK   /sbin/ifenslave -> /bin/busybox
-  OK   /sbin/modinfo -> /bin/kmod
-  OK   /sbin/mdev -> /bin/busybox
-  OK   /sbin/blockdev -> /bin/busybox
-  OK   /sbin/ip6tables -> ip6tables-legacy
-  OK   /sbin/fsck.ext2 -> e2fsck
-  OK   /sbin/arp -> /bin/busybox
-  OK   /sbin/hwclock -> /bin/busybox
-  OK   /sbin/klogd -> /bin/busybox
-  OK   /sbin/syslogd -> /bin/busybox
-  OK   /sbin/iptables -> iptables-legacy
-  OK   /sbin/mkfs.ext3 -> mke2fs
-  OK   /sbin/fbsplash -> /bin/busybox
-  OK   /sbin/fsck.ext4 -> e2fsck
-  OK   /sbin/ifup -> /bin/busybox
-  OK   /sbin/ifdown -> /bin/busybox
-  OK   /sbin/raidautorun -> /bin/busybox
-  OK   /sbin/iptables-restore -> iptables-legacy-restore
-  OK   /sbin/mkfs.vfat -> mkfs.fat
-  OK   /sbin/tunctl -> /bin/busybox
-  OK   /sbin/nologin -> /bin/busybox
-  OK   /sbin/inotifyd -> /bin/busybox
-  OK   /sbin/mkswap -> /bin/busybox
-  OK   /sbin/init -> /bin/busybox
-  OK   /sbin/iproute -> /bin/busybox
-  OK   /sbin/udhcpc -> /bin/busybox
-  OK   /sbin/switch_root -> /bin/busybox
-  OK   /sbin/poweroff -> /bin/busybox
-  OK   /sbin/dosfsck -> fsck.fat
-  OK   /sbin/iprule -> /bin/busybox
-  OK   /sbin/depmod -> /bin/kmod
-  OK   /sbin/rmmod -> /bin/kmod
-  OK   /sbin/iptables-legacy-restore -> xtables-legacy-multi
-  OK   /sbin/iplink -> /bin/busybox
-  OK   /sbin/zcip -> /bin/busybox
-  OK   /sbin/findfs -> /bin/busybox
-  OK   /sbin/loadkmap -> /bin/busybox
-  OK   /sbin/halt -> /bin/busybox
-  OK   /sbin/ip6tables-legacy -> xtables-legacy-multi
-  OK   /sbin/mkdosfs -> mkfs.fat
-  OK   /sbin/modprobe -> /bin/kmod
-  OK   /sbin/fsck.msdos -> fsck.fat
-  OK   /sbin/fstrim -> /bin/busybox
-  OK   /sbin/swapon -> /bin/busybox
-  OK   /sbin/ipneigh -> /bin/busybox
-  OK   /sbin/insmod -> /bin/kmod
-  OK   /sbin/reboot -> /bin/busybox
-  OK   /sbin/ipaddr -> /bin/busybox
-  OK   /sbin/iptunnel -> /bin/busybox
-  OK   /sbin/ip6tables-legacy-restore -> xtables-legacy-multi
-  OK   /sbin/lsmod -> /bin/kmod
-  OK   /sbin/ctstat -> lnstat
-  OK   /sbin/route -> /bin/busybox
-  OK   /sbin/logread -> /bin/busybox
-  OK   /sbin/pivot_root -> /bin/busybox
-  OK   /sbin/ip6tables-restore -> ip6tables-legacy-restore
-  OK   /sbin/nameif -> /bin/busybox
-  OK   /sbin/ip6tables-save -> ip6tables-legacy-save
-  OK   /sbin/slattach -> /bin/busybox
-  OK   /sbin/fsck -> /bin/busybox
-  OK   /sbin/blkid -> /bin/busybox
-  OK   /sbin/vconfig -> /bin/busybox
-  OK   /sbin/mkfs.msdos -> mkfs.fat
-  OK   /sbin/getty -> /bin/busybox
-  OK   /sbin/setconsole -> /bin/busybox
-  OK   /sbin/dosfslabel -> fatlabel
-  OK   /bin/chown -> /bin/busybox
-  OK   /bin/egrep -> /bin/busybox
-  OK   /bin/pipe_progress -> /bin/busybox
-  OK   /bin/getopt -> /bin/busybox
-  OK   /bin/ping -> /bin/busybox
-  OK   /bin/dnsdomainname -> /bin/busybox
-  OK   /bin/ps -> /bin/busybox
-  OK   /bin/sh -> /bin/busybox
-  OK   /bin/ping6 -> /bin/busybox
-  OK   /bin/echo -> /bin/busybox
-  OK   /bin/mount -> /bin/busybox
-  OK   /bin/modinfo -> /bin/kmod
-  OK   /bin/run-parts -> /bin/busybox
-  OK   /bin/sed -> /bin/busybox
-  OK   /bin/su -> /bin/busybox
-  OK   /bin/true -> /bin/busybox
-  OK   /bin/ls -> /bin/busybox
-  OK   /bin/setserial -> /bin/busybox
-  OK   /bin/mv -> /bin/busybox
-  OK   /bin/dmesg -> /bin/busybox
-  OK   /bin/mountpoint -> /bin/busybox
-  OK   /bin/chgrp -> /bin/busybox
-  OK   /bin/hostname -> /bin/busybox
-  OK   /bin/netstat -> /bin/busybox
-  OK   /bin/reformime -> /bin/busybox
-  OK   /bin/ln -> /bin/busybox
-  OK   /bin/fdflush -> /bin/busybox
-  OK   /bin/makemime -> /bin/busybox
-  OK   /bin/zcat -> /bin/busybox
-  OK   /bin/mktemp -> /bin/busybox
-  OK   /bin/tar -> /bin/busybox
-  OK   /bin/base64 -> /bin/busybox
-  OK   /bin/sync -> /bin/busybox
-  OK   /bin/touch -> /bin/busybox
-  OK   /bin/false -> /bin/busybox
-  OK   /bin/cat -> /bin/busybox
-  OK   /bin/fgrep -> /bin/busybox
-  OK   /bin/login -> /bin/busybox
-  OK   /bin/rev -> /bin/busybox
-  OK   /bin/ash -> /bin/busybox
-  OK   /bin/bbconfig -> /bin/busybox
-  OK   /bin/watch -> /bin/busybox
-  OK   /bin/more -> /bin/busybox
-  OK   /bin/lzop -> /bin/busybox
-  OK   /bin/chmod -> /bin/busybox
-  OK   /bin/grep -> /bin/busybox
-  OK   /bin/date -> /bin/busybox
-  OK   /bin/df -> /bin/busybox
-  OK   /bin/gunzip -> /bin/busybox
-  OK   /bin/depmod -> /bin/kmod
-  OK   /bin/ipcalc -> /bin/busybox
-  OK   /bin/rmmod -> /bin/kmod
-  OK   /bin/arch -> /bin/busybox
-  OK   /bin/mknod -> /bin/busybox
-  OK   /bin/uname -> /bin/busybox
-  OK   /bin/stty -> /bin/busybox
-  OK   /bin/chattr -> /bin/busybox
-  OK   /bin/stat -> /bin/busybox
-  OK   /bin/linux64 -> /bin/busybox
-  OK   /bin/sleep -> /bin/busybox
-  OK   /bin/dd -> /bin/busybox
-  OK   /bin/linux32 -> /bin/busybox
-  OK   /bin/fsync -> /bin/busybox
-  OK   /bin/ionice -> /bin/busybox
-  OK   /bin/lsattr -> /bin/busybox
-  OK   /bin/link -> /bin/busybox
-  OK   /bin/kbd_mode -> /bin/busybox
-  OK   /bin/modprobe -> /bin/kmod
-  OK   /bin/setpriv -> /bin/busybox
-  OK   /bin/fatattr -> /bin/busybox
-  OK   /bin/rm -> /bin/busybox
-  OK   /bin/kill -> /bin/busybox
-  OK   /bin/iostat -> /bin/busybox
-  OK   /bin/insmod -> /bin/kmod
-  OK   /bin/rmdir -> /bin/busybox
-  OK   /bin/lsmod -> /bin/kmod
-  OK   /bin/cp -> /bin/busybox
-  OK   /bin/nice -> /bin/busybox
-  OK   /bin/printenv -> /bin/busybox
-  OK   /bin/mkdir -> /bin/busybox
-  OK   /bin/mpstat -> /bin/busybox
-  OK   /bin/dumpkmap -> /bin/busybox
-  OK   /bin/pidof -> /bin/busybox
-  OK   /bin/pwd -> /bin/busybox
-  OK   /bin/usleep -> /bin/busybox
-  OK   /bin/umount -> /bin/busybox
-  OK   /bin/gzip -> /bin/busybox
-  OK   /usr/sbin/nbd-client -> /bin/busybox
-  OK   /usr/sbin/nandwrite -> /bin/busybox
-  OK   /usr/sbin/setfont -> /bin/busybox
-  OK   /usr/sbin/crond -> /bin/busybox
-  OK   /usr/sbin/sendmail -> /bin/busybox
-  OK   /usr/sbin/addgroup -> /bin/busybox
-  OK   /usr/sbin/e2label -> tune2fs
-  OK   /usr/sbin/partprobe -> /bin/busybox
-  OK   /usr/sbin/delgroup -> /bin/busybox
-  OK   /usr/sbin/ntpd -> /bin/busybox
-  OK   /usr/sbin/adduser -> /bin/busybox
-  OK   /usr/sbin/add-shell -> /bin/busybox
-  OK   /usr/sbin/setlogcons -> /bin/busybox
-  OK   /usr/sbin/rdate -> /bin/busybox
-  OK   /usr/sbin/brctl -> /bin/busybox
-  OK   /usr/sbin/e2mmpstatus -> dumpe2fs
-  OK   /usr/sbin/nanddump -> /bin/busybox
-  OK   /usr/sbin/arping -> /bin/busybox
-  OK   /usr/sbin/ether-wake -> /bin/busybox
-  OK   /usr/sbin/readahead -> /bin/busybox
-  OK   /usr/sbin/killall5 -> /bin/busybox
-  OK   /usr/sbin/chpasswd -> /bin/busybox
-  OK   /usr/sbin/remove-shell -> /bin/busybox
-  OK   /usr/sbin/rdev -> /bin/busybox
-  OK   /usr/sbin/rfkill -> /bin/busybox
-  OK   /usr/sbin/loadfont -> /bin/busybox
-  OK   /usr/sbin/fbset -> /bin/busybox
-  OK   /usr/sbin/chroot -> /bin/busybox
-  OK   /usr/sbin/deluser -> /bin/busybox
-  OK   /usr/bin/printf -> /bin/busybox
-  OK   /usr/bin/xzcmp -> xzdiff
-  OK   /usr/bin/unlink -> /bin/busybox
-  OK   /usr/bin/beep -> /bin/busybox
-  OK   /usr/bin/pscan -> /bin/busybox
-  OK   /usr/bin/vi -> /bin/busybox
-  OK   /usr/bin/setsid -> /bin/busybox
-  OK   /usr/bin/sum -> /bin/busybox
-  OK   /usr/bin/traceroute -> /bin/busybox
-  OK   /usr/bin/xzegrep -> xzgrep
-  OK   /usr/bin/bunzip2 -> /bin/busybox
-  OK   /usr/bin/udhcpc6 -> /bin/busybox
-  OK   /usr/bin/xzfgrep -> xzgrep
-  OK   /usr/bin/paste -> /bin/busybox
-  OK   /usr/bin/mkfifo -> /bin/busybox
-  OK   /usr/bin/[[ -> /bin/busybox
-  OK   /usr/bin/od -> /bin/busybox
-  OK   /usr/bin/clear -> /bin/busybox
-  OK   /usr/bin/shuf -> /bin/busybox
-  OK   /usr/bin/resize -> /bin/busybox
-  OK   /usr/bin/eject -> /bin/busybox
-  OK   /usr/bin/top -> /bin/busybox
-  OK   /usr/bin/lzcat -> xz
-  OK   /usr/bin/cmp -> /bin/busybox
-  OK   /usr/bin/sha1sum -> /bin/busybox
-  OK   /usr/bin/dos2unix -> /bin/busybox
-  OK   /usr/bin/bzcat -> /bin/busybox
-  OK   /usr/bin/tr -> /bin/busybox
-  OK   /usr/bin/[ -> /bin/busybox
-  OK   /usr/bin/lzcmp -> xzdiff
-  OK   /usr/bin/unexpand -> /bin/busybox
-  OK   /usr/bin/vlock -> /bin/busybox
-  OK   /usr/bin/head -> /bin/busybox
-  OK   /usr/bin/comm -> /bin/busybox
-  OK   /usr/bin/unzip -> /bin/busybox
-  OK   /usr/bin/xzcat -> xz
-  OK   /usr/bin/expand -> /bin/busybox
-  OK   /usr/bin/ipcs -> /bin/busybox
-  OK   /usr/bin/passwd -> /bin/busybox
-  OK   /usr/bin/less -> /bin/busybox
-  OK   /usr/bin/unlzma -> xz
-  OK   /usr/bin/sha512sum -> /bin/busybox
-  OK   /usr/bin/factor -> /bin/busybox
-  OK   /usr/bin/ipcrm -> /bin/busybox
-  OK   /usr/bin/md5sum -> /bin/busybox
-  OK   /usr/bin/hd -> /bin/busybox
-  OK   /usr/bin/readlink -> /bin/busybox
-  OK   /usr/bin/id -> /bin/busybox
-  OK   /usr/bin/truncate -> /bin/busybox
-  OK   /usr/bin/install -> /bin/busybox
-  OK   /usr/bin/uuencode -> /bin/busybox
-  OK   /usr/bin/env -> /bin/busybox
-  OK   /usr/bin/find -> /bin/busybox
-  OK   /usr/bin/realpath -> /bin/busybox
-  OK   /usr/bin/cut -> /bin/busybox
-  OK   /usr/bin/unix2dos -> /bin/busybox
-  OK   /usr/bin/lzdiff -> xzdiff
-  OK   /usr/bin/last -> /bin/busybox
-  OK   /usr/bin/flock -> /bin/busybox
-  OK   /usr/bin/xargs -> /bin/busybox
-  OK   /usr/bin/test -> /bin/busybox
-  OK   /usr/bin/mkpasswd -> /bin/busybox
-  OK   /usr/bin/seq -> /bin/busybox
-  OK   /usr/bin/sha256sum -> /bin/busybox
-  OK   /usr/bin/lzma -> xz
-  OK   /usr/bin/showkey -> /bin/busybox
-  OK   /usr/bin/killall -> /bin/busybox
-  OK   /usr/bin/fold -> /bin/busybox
-  OK   /usr/bin/wc -> /bin/busybox
-  OK   /usr/bin/lzless -> xzless
-  OK   /usr/bin/nohup -> /bin/busybox
-  OK   /usr/bin/groups -> /bin/busybox
-  OK   /usr/bin/awk -> /bin/busybox
-  OK   /usr/bin/uptime -> /bin/busybox
-  OK   /usr/bin/pmap -> /bin/busybox
-  OK   /usr/bin/nslookup -> /bin/busybox
-  OK   /usr/bin/pgrep -> /bin/busybox
-  OK   /usr/bin/tail -> /bin/busybox
-  OK   /usr/bin/cksum -> /bin/busybox
-  OK   /usr/bin/iptables-xml -> /sbin/xtables-legacy-multi
-  OK   /usr/bin/openvt -> /bin/busybox
-  OK   /usr/bin/sort -> /bin/busybox
-  OK   /usr/bin/free -> /bin/busybox
-  OK   /usr/bin/whoami -> /bin/busybox
-  OK   /usr/bin/ttysize -> /bin/busybox
-  OK   /usr/bin/crontab -> /bin/busybox
-  OK   /usr/bin/expr -> /bin/busybox
-  OK   /usr/bin/hexdump -> /bin/busybox
-  OK   /usr/bin/logger -> /bin/busybox
-  OK   /usr/bin/diff -> /bin/busybox
-  OK   /usr/bin/basename -> /bin/busybox
-  OK   /usr/bin/lzopcat -> /bin/busybox
-  OK   /usr/bin/shred -> /bin/busybox
-  OK   /usr/bin/cryptpw -> /bin/busybox
-  OK   /usr/bin/timeout -> /bin/busybox
-  OK   /usr/bin/cpio -> /bin/busybox
-  OK   /usr/bin/sha3sum -> /bin/busybox
-  OK   /usr/bin/fallocate -> /bin/busybox
-  OK   /usr/bin/nl -> /bin/busybox
-  OK   /usr/bin/hostid -> /bin/busybox
-  OK   /usr/bin/lzegrep -> xzgrep
-  OK   /usr/bin/mesg -> /bin/busybox
-  OK   /usr/bin/tty -> /bin/busybox
-  OK   /usr/bin/pstree -> /bin/busybox
-  OK   /usr/bin/time -> /bin/busybox
-  OK   /usr/bin/uniq -> /bin/busybox
-  OK   /usr/bin/who -> /bin/busybox
-  OK   /usr/bin/nsenter -> /bin/busybox
-  OK   /usr/bin/yes -> /bin/busybox
-  OK   /usr/bin/traceroute6 -> /bin/busybox
-  OK   /usr/bin/blkdiscard -> /bin/busybox
-  OK   /usr/bin/nc -> /bin/busybox
-  OK   /usr/bin/chvt -> /bin/busybox
-  OK   /usr/bin/volname -> /bin/busybox
-  OK   /usr/bin/tree -> /bin/busybox
-  OK   /usr/bin/unlzop -> /bin/busybox
-  OK   /usr/bin/du -> /bin/busybox
-  OK   /usr/bin/tac -> /bin/busybox
-  OK   /usr/bin/dc -> /bin/busybox
-  OK   /usr/bin/whois -> /bin/busybox
-  OK   /usr/bin/which -> /bin/busybox
-  OK   /usr/bin/reset -> /bin/busybox
-  OK   /usr/bin/unxz -> xz
-  OK   /usr/bin/pkill -> /bin/busybox
-  OK   /usr/bin/lzfgrep -> xzgrep
-  OK   /usr/bin/wget -> /bin/busybox
-  OK   /usr/bin/renice -> /bin/busybox
-  OK   /usr/bin/microcom -> /bin/busybox
-  OK   /usr/bin/cal -> /bin/busybox
-  OK   /usr/bin/uudecode -> /bin/busybox
-  OK   /usr/bin/rnano -> nano
-  OK   /usr/bin/pwdx -> /bin/busybox
-  OK   /usr/bin/setkeycodes -> /bin/busybox
-  OK   /usr/bin/xxd -> /bin/busybox
-  OK   /usr/bin/tee -> /bin/busybox
-  OK   /usr/bin/bzip2 -> /bin/busybox
-  OK   /usr/bin/deallocvt -> /bin/busybox
-  OK   /usr/bin/bc -> /bin/busybox
-  OK   /usr/bin/lzgrep -> xzgrep
-  OK   /usr/bin/unshare -> /bin/busybox
-  OK   /usr/bin/strings -> /bin/busybox
-  OK   /usr/bin/nproc -> /bin/busybox
-  OK   /usr/bin/fuser -> /bin/busybox
-  OK   /usr/bin/lzmore -> xzmore
-  OK   /usr/bin/dirname -> /bin/busybox
-  OK   /usr/bin/split -> /bin/busybox
-  OK   /usr/bin/lsof -> /bin/busybox
-  OK   /usr/bin/nmeter -> /bin/busybox
-  OK   /etc/mtab -> /proc/mounts
-[4] modprobe / lsmod:
-  OK   /lib/modules/6.6.0 есть (97 модулей)
-  OK   modules.dep на месте
-kmod version 32
-  OK   modprobe cfg80211
-  OK   modprobe mac80211
-  OK   modprobe rfkill
-  OK   modprobe rt2x00lib
-  OK   modprobe rt2800lib
-  OK   modprobe rt2800usb
-  OK   modprobe rtl8xxxu
-  OK   modprobe rtl8192cu
-  OK   modprobe mt7601u
-  OK   modprobe mt76x0u
-  OK   modprobe ath9k_htc
-  OK   modprobe carl9170
-  OK   modprobe exfat
-  OK   modprobe ntfs3
-  OK   modprobe nf_conntrack
-  OK   modprobe nf_nat
-  OK   modprobe xt_MASQUERADE
-  OK   modprobe iptable_nat
-  OK   modprobe cdc_acm
-  OK   modprobe r8152
-  OK   lsmod: 37 загруженных модулей
-    Module                  Size  Used by
-    r8152                  94208  0
-    cdc_acm                20480  0
-    iptable_nat            12288  0
-    ip_tables              20480  1 iptable_nat
-    xt_MASQUERADE          12288  0
-    x_tables               20480  3 ip_tables,xt_MASQUERADE,iptable_nat
-    nf_nat                 28672  2 xt_MASQUERADE,iptable_nat
-    nf_conntrack           81920  2 xt_MASQUERADE,nf_nat
-    nf_defrag_ipv6         16384  1 nf_conntrack
-    nf_defrag_ipv4         12288  1 nf_conntrack
-    ntfs3                 212992  0
-[5] iptables / NAT:
-  OK   iptables -t nat -L работает
-  OK   правило MASQUERADE добавлено
-    -P POSTROUTING ACCEPT
-    -A POSTROUTING -o wlan0 -j MASQUERADE
-    iptables v1.8.10 (legacy)
-[6] запуск всех бинарников (ловим отсутствующие библиотеки):
-Terminated
-Terminated
-  OK   все ELF-бинарники запускаются
-[6b] запуск wpa_supplicant (баг b021: ключ -f не поддерживается):
-  OK   wpa_supplicant БЕЗ -f - wifi должен использовать перенаправление
-  OK   wpa_supplicant НЕ поддерживает -f (Alpine без CONFIG_DEBUG_FILE) - так и задумано
-  OK   wifi сам определяет поддержку -f
-  OK   wifi умеет запустить wpa_supplicant без -f (setsid + перенаправление в лог)
-  OK   -f в wifi используется только при поддержке
-  OK   без -f wpa_supplicant инициализируется
-  OK   setsid есть (wpa_supplicant переживёт закрытие сессии)
-[6c] база регуляторных доменов:
-  OK   regulatory.db (4896 Б)
-  OK   regulatory.db.p7s (1182 Б)
-  OK   в dmesg нет жалобы на подпись regdb
-[6d] wpa_cli/ctrl_interface и DHCP (баг b022: ассоциация есть, адреса нет):
-  OK   wpa_cli есть
-  OK   udhcpc default.script есть (адрес/DNS будут прописаны)
-  OK   udhcpc есть
-  OK   все вызовы wpa_cli через обёртку с -p
-  OK   CTRL_DIR=/var/run/wpa_supplicant (значение по умолчанию для wpa_cli)
-  OK   новый конфиг: ctrl_interface=/var/run/wpa_supplicant
-  OK   старый конфиг (b022) перенесён на /var/run/wpa_supplicant
-  OK   ctrl_interface в конфиге ровно один
-  OK     assoc_ok: лог платы b022 распознан как подключение
-  OK     assoc_ok: пустой лог -> не подключено
-  OK     assoc_ok: WRONG_KEY/дисконнект -> не подключено
-  OK   в справке есть wifi dhcp
-  OK   в справке есть wifi static
-[6e] монитор питания и ограничение мощности передатчика:
-  OK   pmic-vbus есть и исполняемый
-  OK   pmic-vbus: синтаксис sh корректен
-  OK   VBUS U читается из 0x5A/0x5B (AXP209)
-  OK   ток VBUS читается из 0x5C/0x5D
-  OK   масштаб 1.7 мВ на отсчёт (по даташиту AXP209)
-  OK   переменная тока VBUS именуется единообразно
-  OK   режим log сбрасывает данные на карту (переживёт зависание)
-  OK   wifi tx (ограничение мощности) есть
-  OK   wifi ps (power save) есть
-  OK   ограничение мощности применяется при подключении
-  OK   ограничение мощности сохраняется в /etc/wifi-txpower (переживёт перезагрузку)
-  OK   apply_tx определена как функция
-  OK   apply_tx вызывается в обоих путях подключения (cmd_connect и cmd_up)
-  OK   в pmic-vbus нет функции с именем mv
-  OK   преобразование отсчёта АЦП в мВ вынесено в to_mv()
-  OK   в справке wifi есть ps
-  OK   в motd есть заголовок раздела ПИТАНИЕ
-  OK   в справке wifi есть tx
-  OK   в motd есть раздел про питание
-[6f] wifi selftest (логика конфига wpa_supplicant, без железа):
-  OK   wifi selftest завершился с кодом 0
-    wifi selftest: логика конфига (временный файл /tmp/wifi-selftest.6103)
-      OK   найдено сетей (форматы 'network={' и 'network = {') = 2
-      OK   have_saved_nets видит сети
-      OK   строк в списке сетей = 2
-      OK   в списке есть First
-      OK   сетей после удаления First = 1
-      OK   блок First удалён
-      OK   соседний блок Second не пострадал
-      OK   строки вне блоков сохранены
-      OK   сетей после удаления Second (формат 'network = {') = 0
-      OK   блоков сети Dup после повторного connect = 1
-      OK   новый пароль на месте
-      OK   незакрытый блок не потерян
-    [wifi] selftest: пройдено проверок 12, провалов 0
-  OK   в wifi selftest нет провалов
-  OK   selftest выполнил проверок: 12 (>= 12)
-  OK   ломаного шаблона grep нет: ^network{
-  OK   ломаного шаблона grep нет: ^network[ \t]*{
-  OK   используется проверенный шаблон NETBLK_RE='^network[ =]*[{]'
-  OK   awk сохраняет заголовок блока network (иначе конфиг бьётся)
-  OK   команда wifi selftest есть
-  OK   wifi selftest есть в справке
-[7] i2c:
-/dev/i2c-0 /dev/i2c-1 /dev/i2c-2 
-  OK   /dev/i2c-0
-  OK   /dev/i2c-1
-  OK   /dev/i2c-2
-    i2c-0	i2c       	mv64xxx_i2c adapter             	I2C adapter
-    i2c-1	i2c       	mv64xxx_i2c adapter             	I2C adapter
-    i2c-2	i2c       	mv64xxx_i2c adapter             	I2C adapter
-[8] прошивки:
-  файлов: 73, размер: 6.2M
-  OK   regulatory.db
-  OK   rtlwifi/rtl8188eufw.bin
-  OK   rt2870.bin
-  (нет htca_9271.fw - не критично, зависит от адаптера)
-  OK   mt7601u.bin
-[9] пакетный менеджер:
-    apk-tools 2.14.4, compiled for armv7.
-    repo: https://dl-cdn.alpinelinux.org/alpine/v3.20/main
-    repo: https://dl-cdn.alpinelinux.org/alpine/v3.20/community
-  ключей: 5
-  OK   baked.txt: 54 записей
-    busybox-extras 1.36.1-r31
-    dbus-libs 1.14.10-r1
-    devmem2 0.2-r0
-    dnsmasq 2.90-r3
-    dnsmasq-common 2.90-r3
-[10] хелперы:
-  OK   accel (272 строк)
-  OK   autologin-off (7 строк)
-  OK   autologin-on (7 строк)
-  OK   bootnext (178 строк)
-  OK   cftest (114 строк)
-  OK   clk (78 строк)
-  OK   diag (103 строк)
-  OK   i2cbus (15 строк)
-  OK   info (23 строк)
-  OK   memtest (10 строк)
-  OK   pkg (332 строк)
-  OK   pmic (33 строк)
-  OK   pmic-regs (82 строк)
-  OK   pmic-vbus (173 строк)
-  OK   regs (99 строк)
-  OK   savelog (55 строк)
-  OK   usb-devices (198 строк)
-  OK   usbnet (807 строк)
-  OK   wdt (203 строк)
-  OK   whichboot (130 строк)
-  OK   wifi (1040 строк)
-  OK   hotplug (39 строк)
-  OK   rcS (43 строк)
-  OK   local (92 строк)
-  OK   autologin (2 строк)
---- справка wifi:
-    wifi - USB-WiFi адаптер на Informer 701 (разъём на месте WiFi-модуля = USB2)
-    
-      wifi dev                 что воткнуто, какой драйвер, каких прошивок не хватает
-      wifi scan [iface]        список сетей вокруг (сигнал, канал, тип защиты)
-      wifi connect SSID [пароль] [iface]
-                               подключиться и ЗАПОМНИТЬ сеть в
---- справка pkg:
-    pkg - пакеты Alpine 3.20 (armv7) на Informer 701
-    
-      pkg update                обновить индекс пакетов (нужен интернет и верное время)
-      pkg add <пакет> ...       установить
-      pkg del <пакет> ...       удалить
-      pkg search <строка>       поиск по имени/описанию
---- справка accel:
-[  178.887094] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-    [accel] ОШИБКА: не удалось прочитать акселерометр (диагностика: accel info)
-[11] accel (в QEMU чипа нет - ждём ПОНЯТНУЮ ошибку, а не липовые нули):
-[  181.206882] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-    [accel] ОШИБКА: не удалось прочитать акселерометр (диагностика: accel info)
-  OK   accel read честно сообщает, что чтения нет
-  --- accel info (таймаут 30 с: скан шины в эмуляции занимает минуты) ---
-[  183.766779] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-[  185.847272] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-[  187.927111] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-[  190.006792] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-[  192.086952] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-[  194.167163] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-[  196.247119] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-[  198.326392] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-[  200.406479] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-[  202.486743] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-[  204.566628] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-[  206.646641] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-[  208.726763] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-[  210.806754] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-    === диагностика акселерометра ===
-Killed
-      чип: Freescale MMA7660FC (U48), i2c-1, адрес 0x4c
-      узел DT: &i2c1 { accelerometer@4c { compatible = "fsl,mma7660" } }
-    
-      --- шины i2c ---
-        /dev/i2c-0
-        /dev/i2c-1
-        /dev/i2c-2
-        i2c-0: mv64xxx_i2c adapter
-        i2c-1: mv64xxx_i2c adapter
-        i2c-2: mv64xxx_i2c adapter
-    
-      --- что видно на шине 1 (ищем 0x4c) ---
-[12] usbnet test:
-    === диагностика USB-gadget ===
-    ядро                           6.6.0
-    /sys/class/udc                     
-    configfs                           не смонтирован (usbnet сделает сам)
-    configfs после монтирования ok
-    
-    Проверка поддержки функций (создаём временный гаджет):
-      rndis          ПОДДЕРЖИВАЕТСЯ
-      ecm            ПОДДЕРЖИВАЕТСЯ
-      ncm            ПОДДЕРЖИВАЕТСЯ
-      eem            ПОДДЕРЖИВАЕТСЯ
-      acm            ПОДДЕРЖИВАЕТСЯ
-      mass_storage   ПОДДЕРЖИВАЕТСЯ
-      ffs            ПОДДЕРЖИВАЕТСЯ
-      serial         нет
-    
-    extcon (роль OTG):
-      USB=0
-    USB-HOST=0
-    
-    USB-хост (EHCI/OHCI):
-      ehci-platform: 
-      ohci-platform: 
-    
-    dmesg (usb/musb/gadget):
-[13] dmesg (ошибки):
-[  212.910420] i2c i2c-1: mv64xxx: I2C bus locked, block: 1, time_left: 0
-    [    0.000000] Kernel command line: console=ttyS0,115200 loglevel=4 clk_ignore_unused rdinit=/init panic=1
-    [   45.132897] WARNING: CPU: 0 PID: 110 at drivers/usb/musb/sunxi.c:406 sunxi_musb_ep_offset+0x4c/0x54
-  память: MemTotal:         508016 kB
-[14] motd:
-    
-      Informer 701  (Allwinner A10 / mainboard N708H6)   build pubtest
-      ---------------------------------------------------------------
-      UART0 = PB22/PB23 = TP20 (TX) / TP21 (RX), 115200 8N1
-      login: root / informer701
-    
-      СЕТЬ ЧЕРЕЗ USB (b017+): тот же кабель micro-USB, что и питание.
-          на плате :  usbnet on        (RNDIS - для Windows; ecm - для Linux)
-== провалено проверок: 0
-== QTEST RESULT: PASS ==
-== QTEST DONE ==
-qemu-system-arm: terminating on signal 15 from pid 15405 (bash)
+Welcome to [1mDebian GNU/Linux 12 (bookworm)[0m!
+
+[    7.326197] systemd[1]: Hostname set to <informer701>.
+[    7.618855] systemd[1]: Using hardware watchdog 'sunxi-wdt', version 0, device /dev/watchdog0
+[    7.621353] systemd[1]: Watchdog running with a hardware timeout of 16s.
+[    7.627652] systemd[1]: memfd_create() called without MFD_EXEC or MFD_NOEXEC_SEAL set
+[   11.121216] systemd[1]: Queued start job for default target graphical.target.
+[   11.159774] systemd[1]: Created slice system-getty.slice - Slice /system/getty.
+[[0;32m  OK  [0m] Created slice [0;1;39msystem-getty.slice[0m - Slice /system/getty.
+[   11.172009] systemd[1]: Created slice system-modprobe.slice - Slice /system/modprobe.
+[[0;32m  OK  [0m] Created slice [0;1;39msystem-modpr…lice[0m - Slice /system/modprobe.
+[   11.180924] systemd[1]: Created slice system-serial\x2dgetty.slice - Slice /system/serial-getty.
+[[0;32m  OK  [0m] Created slice [0;1;39msystem-seria…[0m - Slice /system/serial-getty.
+[   11.187543] systemd[1]: Created slice system-systemd\x2dfsck.slice - Slice /system/systemd-fsck.
+[[0;32m  OK  [0m] Created slice [0;1;39msystem-syste…[0m - Slice /system/systemd-fsck.
+[   11.193536] systemd[1]: Created slice user.slice - User and Session Slice.
+[[0;32m  OK  [0m] Created slice [0;1;39muser.slice[0m - User and Session Slice.
+[   11.200507] systemd[1]: Started systemd-ask-password-console.path - Dispatch Password Requests to Console Directory Watch.
+[[0;32m  OK  [0m] Started [0;1;39msystemd-ask-passwo…quests to Console Directory Watch.
+[   11.206940] systemd[1]: Started systemd-ask-password-wall.path - Forward Password Requests to Wall Directory Watch.
+[[0;32m  OK  [0m] Started [0;1;39msystemd-ask-passwo… Requests to Wall Directory Watch.
+[   11.212999] systemd[1]: Expecting device dev-mmcblk0p1.device - /dev/mmcblk0p1...
+         Expecting device [0;1;39mdev-mmcblk0p1.device[0m - /dev/mmcblk0p1...
+[   11.216381] systemd[1]: Expecting device dev-ttyS0.device - /dev/ttyS0...
+         Expecting device [0;1;39mdev-ttyS0.device[0m - /dev/ttyS0...
+[   11.220591] systemd[1]: Reached target cryptsetup.target - Local Encrypted Volumes.
+[[0;32m  OK  [0m] Reached target [0;1;39mcryptsetup.…get[0m - Local Encrypted Volumes.
+[   11.224612] systemd[1]: Reached target integritysetup.target - Local Integrity Protected Volumes.
+[[0;32m  OK  [0m] Reached target [0;1;39mintegrityse…Local Integrity Protected Volumes.
+[   11.229494] systemd[1]: Reached target paths.target - Path Units.
+[[0;32m  OK  [0m] Reached target [0;1;39mpaths.target[0m - Path Units.
+[   11.233483] systemd[1]: Reached target remote-fs.target - Remote File Systems.
+[[0;32m  OK  [0m] Reached target [0;1;39mremote-fs.target[0m - Remote File Systems.
+[   11.237188] systemd[1]: Reached target slices.target - Slice Units.
+[[0;32m  OK  [0m] Reached target [0;1;39mslices.target[0m - Slice Units.
+[   11.242354] systemd[1]: Reached target veritysetup.target - Local Verity Protected Volumes.
+[[0;32m  OK  [0m] Reached target [0;1;39mveritysetup… - Local Verity Protected Volumes.
+[   11.256165] systemd[1]: Listening on systemd-fsckd.socket - fsck to fsckd communication Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-fsckd…sck to fsckd communication Socket.
+[   11.265490] systemd[1]: Listening on systemd-initctl.socket - initctl Compatibility Named Pipe.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-initc… initctl Compatibility Named Pipe.
+[   11.344567] systemd[1]: systemd-journald-audit.socket - Journal Audit Socket was skipped because of an unmet condition check (ConditionSecurity=audit).
+[   11.351314] systemd[1]: Listening on systemd-journald-dev-log.socket - Journal Socket (/dev/log).
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-journ…t[0m - Journal Socket (/dev/log).
+[   11.357588] systemd[1]: Listening on systemd-journald.socket - Journal Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-journald.socket[0m - Journal Socket.
+[   11.365591] systemd[1]: Listening on systemd-udevd-control.socket - udev Control Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-udevd….socket[0m - udev Control Socket.
+[   11.372705] systemd[1]: Listening on systemd-udevd-kernel.socket - udev Kernel Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-udevd…l.socket[0m - udev Kernel Socket.
+[   11.379364] systemd[1]: dev-hugepages.mount - Huge Pages File System was skipped because of an unmet condition check (ConditionPathExists=/sys/kernel/mm/hugepages).
+[   11.382323] systemd[1]: dev-mqueue.mount - POSIX Message Queue File System was skipped because of an unmet condition check (ConditionPathExists=/proc/sys/fs/mqueue).
+[   11.385092] systemd[1]: sys-kernel-debug.mount - Kernel Debug File System was skipped because of an unmet condition check (ConditionPathExists=/sys/kernel/debug).
+[   11.387718] systemd[1]: sys-kernel-tracing.mount - Kernel Trace File System was skipped because of an unmet condition check (ConditionPathExists=/sys/kernel/tracing).
+[   11.444211] systemd[1]: Starting fake-hwclock.service - Restore / save the current clock...
+         Starting [0;1;39mfake-hwclock.serv…estore / save the current clock...
+[   11.510888] systemd[1]: Starting kmod-static-nodes.service - Create List of Static Device Nodes...
+         Starting [0;1;39mkmod-static-nodes…ate List of Static Device Nodes...
+[   11.613283] systemd[1]: Starting modprobe@configfs.service - Load Kernel Module configfs...
+         Starting [0;1;39mmodprobe@configfs…m - Load Kernel Module configfs...
+[   11.730658] systemd[1]: Starting modprobe@dm_mod.service - Load Kernel Module dm_mod...
+         Starting [0;1;39mmodprobe@dm_mod.s…[0m - Load Kernel Module dm_mod...
+[   11.769944] systemd[1]: Starting modprobe@drm.service - Load Kernel Module drm...
+         Starting [0;1;39mmodprobe@drm.service[0m - Load Kernel Module drm...
+[   11.942011] systemd[1]: Starting modprobe@efi_pstore.service - Load Kernel Module efi_pstore...
+         Starting [0;1;39mmodprobe@efi_psto…- Load Kernel Module efi_pstore...
+[   12.034153] systemd[1]: Starting modprobe@fuse.service - Load Kernel Module fuse...
+         Starting [0;1;39mmodprobe@fuse.ser…e[0m - Load Kernel Module fuse...
+[   12.140701] systemd[1]: Starting modprobe@loop.service - Load Kernel Module loop...
+         Starting [0;1;39mmodprobe@loop.ser…e[0m - Load Kernel Module loop...
+[   12.143874] systemd[1]: systemd-fsck-root.service - File System Check on Root Device was skipped because of an unmet condition check (ConditionPathIsReadWrite=!/).
+[   12.147419] systemd[1]: systemd-journald.service: unit configures an IP firewall, but the local system does not support BPF/cgroup firewalling.
+[   12.147822] systemd[1]: (This warning is only shown for the first unit using IP firewalling.)
+[   12.230879] systemd[1]: Starting systemd-journald.service - Journal Service...
+         Starting [0;1;39msystemd-journald.service[0m - Journal Service...
+[   12.311179] systemd[1]: Starting systemd-modules-load.service - Load Kernel Modules...
+         Starting [0;1;39msystemd-modules-l…rvice[0m - Load Kernel Modules...
+[   12.364397] systemd[1]: Starting systemd-remount-fs.service - Remount Root and Kernel File Systems...
+         Starting [0;1;39msystemd-remount-f…nt Root and Kernel File Systems...
+[   12.443725] systemd[1]: Starting systemd-udev-trigger.service - Coldplug All udev Devices...
+         Starting [0;1;39msystemd-udev-trig…[0m - Coldplug All udev Devices...
+[   12.753575] systemd[1]: Finished fake-hwclock.service - Restore / save the current clock.
+[[0;32m  OK  [0m] Finished [0;1;39mfake-hwclock.serv… Restore / save the current clock.
+[   13.042596] systemd[1]: Finished kmod-static-nodes.service - Create List of Static Device Nodes.
+[[0;32m  OK  [0m] Finished [0;1;39mkmod-static-nodes…reate List of Static Device Nodes.
+[   13.114404] systemd[1]: modprobe@configfs.service: Deactivated successfully.
+[   13.132628] EXT4-fs (mmcblk0p2): re-mounted 8f1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8 r/w. Quota mode: disabled.
+[   13.179774] systemd[1]: Finished modprobe@configfs.service - Load Kernel Module configfs.
+[[0;32m  OK  [0m] Finished [0;1;39mmodprobe@configfs…[0m - Load Kernel Module configfs.
+[   13.343079] systemd[1]: modprobe@dm_mod.service: Deactivated successfully.
+[   13.386062] systemd[1]: Finished modprobe@dm_mod.service - Load Kernel Module dm_mod.
+[[0;32m  OK  [0m] Finished [0;1;39mmodprobe@dm_mod.s…e[0m - Load Kernel Module dm_mod.
+[   13.457922] systemd[1]: modprobe@drm.service: Deactivated successfully.
+[   13.490217] systemd[1]: Finished modprobe@drm.service - Load Kernel Module drm.
+[[0;32m  OK  [0m] Finished [0;1;39mmodprobe@drm.service[0m - Load Kernel Module drm.
+[   13.515555] systemd[1]: modprobe@efi_pstore.service: Deactivated successfully.
+[   13.569185] systemd[1]: Finished modprobe@efi_pstore.service - Load Kernel Module efi_pstore.
+[[0;32m  OK  [0m] Finished [0;1;39mmodprobe@efi_psto…m - Load Kernel Module efi_pstore.
+[   13.636544] systemd[1]: modprobe@fuse.service: Deactivated successfully.
+[   13.669462] systemd[1]: Finished modprobe@fuse.service - Load Kernel Module fuse.
+[[0;32m  OK  [0m] Finished [0;1;39mmodprobe@fuse.service[0m - Load Kernel Module fuse.
+[   13.715556] systemd[1]: modprobe@loop.service: Deactivated successfully.
+[   13.745641] cfg80211: Loading compiled-in X.509 certificates for regulatory database
+[   13.779273] systemd[1]: Finished modprobe@loop.service - Load Kernel Module loop.
+[[0;32m  OK  [0m] Finished [0;1;39mmodprobe@loop.service[0m - Load Kernel Module loop.
+[   13.837031] systemd[1]: Finished systemd-remount-fs.service - Remount Root and Kernel File Systems.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-remount-f…ount Root and Kernel File Systems.
+[   13.904126] systemd[1]: sys-fs-fuse-connections.mount - FUSE Control File System was skipped because of an unmet condition check (ConditionPathExists=/sys/fs/fuse/connections).
+[   13.929250] platform cpufreq-dt: deferred probe pending
+[   13.999951] systemd[1]: Mounting sys-kernel-config.mount - Kernel Configuration File System...
+         Mounting [0;1;39msys-kernel-config…ernel Configuration File System...
+[   14.009797] systemd[1]: systemd-firstboot.service - First Boot Wizard was skipped because of an unmet condition check (ConditionFirstBoot=yes).
+[   14.011555] systemd[1]: systemd-pstore.service - Platform Persistent Storage Archival was skipped because of an unmet condition check (ConditionDirectoryNotEmpty=/sys/fs/pstore).
+[   14.067503] Loaded X.509 cert 'sforshee: 00b28ddf47aef9cea7'
+[   14.120745] systemd[1]: Starting systemd-random-seed.service - Load/Save Random Seed...
+         Starting [0;1;39msystemd-random-se…ice[0m - Load/Save Random Seed...
+[   14.124503] systemd[1]: systemd-repart.service - Repartition Root Disk was skipped because no trigger condition checks were met.
+[   14.295718] systemd[1]: Starting systemd-sysusers.service - Create System Users...
+         Starting [0;1;39msystemd-sysusers.…rvice[0m - Create System Users...
+[   14.469044] systemd[1]: Finished systemd-modules-load.service - Load Kernel Modules.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-modules-l…service[0m - Load Kernel Modules.
+[   14.615669] systemd[1]: Mounted sys-kernel-config.mount - Kernel Configuration File System.
+[[0;32m  OK  [0m] Mounted [0;1;39msys-kernel-config.… Kernel Configuration File System.
+[   14.770695] systemd[1]: Starting systemd-sysctl.service - Apply Kernel Variables...
+         Starting [0;1;39msystemd-sysctl.se…ce[0m - Apply Kernel Variables...
+[   15.269712] systemd[1]: Finished systemd-sysusers.service - Create System Users.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-sysusers.service[0m - Create System Users.
+[   15.340058] systemd[1]: Starting systemd-tmpfiles-setup-dev.service - Create Static Device Nodes in /dev...
+         Starting [0;1;39msystemd-tmpfiles-…ate Static Device Nodes in /dev...
+[   15.530674] systemd[1]: Finished systemd-sysctl.service - Apply Kernel Variables.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-sysctl.service[0m - Apply Kernel Variables.
+[   16.112180] systemd[1]: Started systemd-journald.service - Journal Service.
+[[0;32m  OK  [0m] Started [0;1;39msystemd-journald.service[0m - Journal Service.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-tmpfiles-…reate Static Device Nodes in /dev.
+[[0;32m  OK  [0m] Reached target [0;1;39mlocal-fs-pr…reparation for Local File Systems.
+         Starting [0;1;39minformer701-zram.… RAM Swap (zram0, 512 MiB DDR3)...
+         Starting [0;1;39msystemd-udevd.ser…ger for Device Events and Files...
+[   16.977826] lz4_compress: loading out-of-tree module taints kernel.
+[   17.379084] random: crng init done
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-random-se…rvice[0m - Load/Save Random Seed.
+[   18.252846] zram: Added device: zram0
+[[0;32m  OK  [0m] Started [0;1;39msystemd-udevd.serv…nager for Device Events and Files.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-rfkil…l Switch Status /dev/rfkill Watch.
+[   19.949558] ntfs3: Max link count 4000
+[   20.098734] zram0: detected capacity change from 0 to 508016
+[   20.448893] Adding 254004k swap on /dev/zram0.  Priority:100 extents:1 across:254004k SS
+[[0;32m  OK  [0m] Finished [0;1;39minformer701-zram.…ed RAM Swap (zram0, 512 MiB DDR3).
+[[0;32m  OK  [0m] Reached target [0;1;39mswap.target[0m - Swaps.
+         Mounting [0;1;39mtmp.mount[0m - /tmp...
+         Mounting [0;1;39mvar-log.mount[0m - /var/log...
+         Mounting [0;1;39mvar-tmp.mount[0m - /var/tmp...
+[[0;32m  OK  [0m] Mounted [0;1;39mtmp.mount[0m - /tmp.
+[[0;32m  OK  [0m] Mounted [0;1;39mvar-log.mount[0m - /var/log.
+[[0;32m  OK  [0m] Mounted [0;1;39mvar-tmp.mount[0m - /var/tmp.
+[[0;32m  OK  [0m] Reached target [0;1;39mlocal-fs.target[0m - Local File Systems.
+         Starting [0;1;39msystemd-journal-f…h Journal to Persistent Storage...
+[   21.239338] systemd-journald[1233]: Received client request to flush runtime journal.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-journal-f…ush Journal to Persistent Storage.
+         Starting [0;1;39msystemd-tmpfiles-…te System Files and Directories...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-tmpfiles-…eate System Files and Directories.
+[[0;32m  OK  [0m] Started [0;1;39mhaveged.service[0…mon based on the HAVEGE algorithm.
+         Starting [0;1;39msystemd-timesyncd… - Network Time Synchronization...
+         Starting [0;1;39msystemd-update-ut…rd System Boot/Shutdown in UTMP...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-update-ut…cord System Boot/Shutdown in UTMP.
+[[0;32m  OK  [0m] Started [0;1;39msystemd-timesyncd.…0m - Network Time Synchronization.
+[[0;32m  OK  [0m] Reached target [0;1;39mtime-set.target[0m - System Time Set.
+[[0m[0;31m*     [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (15s / 1min 30s)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (16s / 1min 30s)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (17s / 1min 30s)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (2 of 3) Job dev-ttyS0.device/start running (17s / 1min 30s)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (2 of 3) Job dev-ttyS0.device/start running (18s / 1min 30s)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (2 of 3) Job dev-ttyS0.device/start running (18s / 1min 30s)
+M[K[    [0;31m*[0;1;31m*[0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (19s / no limit)
+M[K[     [0;31m*[0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (20s / no limit)
+M[K[    [0;31m*[0;1;31m*[0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (20s / no limit)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (1 of 3) Job dev-mmcblk0p1.device/start running (21s / 1min 30s)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (22s / 1min 30s)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (22s / 1min 30s)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (2 of 3) Job dev-ttyS0.device/start running (23s / 1min 30s)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (2 of 3) Job dev-ttyS0.device/start running (24s / 1min 30s)
+M[K[[0m[0;31m*     [0m] (2 of 3) Job dev-ttyS0.device/start running (24s / 1min 30s)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (25s / no limit)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (25s / no limit)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (26s / no limit)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (27s / 1min 30s)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (1 of 3) Job dev-mmcblk0p1.device/start running (27s / 1min 30s)
+M[K[    [0;31m*[0;1;31m*[0m] (1 of 3) Job dev-mmcblk0p1.device/start running (28s / 1min 30s)
+M[K[     [0;31m*[0m] (2 of 3) Job dev-ttyS0.device/start running (29s / 1min 30s)
+M[K[    [0;31m*[0;1;31m*[0m] (2 of 3) Job dev-ttyS0.device/start running (29s / 1min 30s)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (2 of 3) Job dev-ttyS0.device/start running (30s / 1min 30s)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (31s / no limit)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (31s / no limit)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (32s / no limit)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (33s / 1min 30s)
+M[K[[0m[0;31m*     [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (33s / 1min 30s)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (1 of 3) Job dev-mmcblk0p1.device/start running (33s / 1min 30s)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (2 of 3) Job dev-ttyS0.device/start running (34s / 1min 30s)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (2 of 3) Job dev-ttyS0.device/start running (34s / 1min 30s)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (2 of 3) Job dev-ttyS0.device/start running (35s / 1min 30s)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (35s / no limit)
+M[K[    [0;31m*[0;1;31m*[0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (37s / no limit)
+M[K[     [0;31m*[0m] (3 of 3) Job systemd-udev-trigger.s…ice/start running (37s / no limit)
+M[K[[0;32m  OK  [0m] Finished [0;1;39msystemd-udev-trig…e[0m - Coldplug All udev Devices.
+[K[[0;32m  OK  [0m] Reached target [0;1;39msysinit.target[0m - System Initialization.
+[[0;32m  OK  [0m] Started [0;1;39mdpkg-db-backup.tim… Daily dpkg database backup timer.
+[[0;32m  OK  [0m] Started [0;1;39msystemd-tmpfiles-c… Cleanup of Temporary Directories.
+[[0;32m  OK  [0m] Reached target [0;1;39mtimers.target[0m - Timer Units.
+[[0;32m  OK  [0m] Listening on [0;1;39mdbus.socket[…- D-Bus System Message Bus Socket.
+[[0;32m  OK  [0m] Reached target [0;1;39msockets.target[0m - Socket Units.
+[[0;32m  OK  [0m] Reached target [0;1;39mbasic.target[0m - Basic System.
+         Starting [0;1;39mdbus.service[0m - D-Bus System Message Bus...
+         Starting [0;1;39mdropbear.service…Dropbear Lightweight SSH Server...
+         Starting [0;1;39minformer701-usbne…get Network (usb0 192.168.77.1)...
+         Starting [0;1;39msystemd-logind.se…ice[0m - User Login Management...
+         Starting [0;1;39msystemd-user-sess…vice[0m - Permit User Sessions...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-user-sess…ervice[0m - Permit User Sessions.
+[[0;32m  OK  [0m] Found device [0;1;39mdev-ttyS0.device[0m - /dev/ttyS0.
+[[0;32m  OK  [0m] Started [0;1;39mdropbear.service[…- Dropbear Lightweight SSH Server.
+[[0;32m  OK  [0m] Found device [0;1;39mdev-mmcblk0p1.device[0m - /dev/mmcblk0p1.
+[[0;32m  OK  [0m] Started [0;1;39mdbus.service[0m - D-Bus System Message Bus.
+[[0;32m  OK  [0m] Started [0;1;39mgetty@tty1.service[0m - Getty on tty1.
+[[0;32m  OK  [0m] Started [0;1;39mserial-getty@ttyS0…rvice[0m - Serial Getty on ttyS0.
+[[0;32m  OK  [0m] Reached target [0;1;39mgetty.target[0m - Login Prompts.
+         Starting [0;1;39msystemd-fsck@dev-… System Check on /dev/mmcblk0p1...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-fsck@dev-…le System Check on /dev/mmcblk0p1.
+
+
+Informer 701 (Allwinner A10, Debian 12 Bookworm armhf) informer701 ttyS0
+
+informer701 login: root (automatic login)
+
+Linux informer701 6.6.0 #1 SMP Sat Oct 31 16:41:38 UTC 2026 armv7l
+
+====================================================================
+ Informer 701 (плата N708H6, Allwinner A10, 512 МиБ DDR3)
+ Debian 12 (Bookworm) armhf / systemd / Linux 6.6.0 (debian12-20261125-1817)
+====================================================================
+ Быстрые команды:
+   info       сводка по плате, памяти, zram, watchdog и PMIC
+   diag       полный отчёт (частоты, AXP209, dmesg, разделы)
+   savelog    сохранить diag + journalctl на FAT-раздел /boot/logs/
+   usbnet     сеть по micro-USB OTG (192.168.77.1, SSH, DHCP)
+   wifi       управление Wi-Fi (scan, up, ap, share, status, selftest)
+   pkg        менеджер пакетов (обёртка над apt / dpkg)
+   accel      акселерометр MMA7660 (read, watch, level, info)
+   pmic-vbus  контроль напряжения питания 5 В через АЦП AXP209
+   wdt        статус аппаратного сторожевого таймера (/dev/watchdog)
+   bootnext   безопасный выбор варианта DTB на одну загрузку
+====================================================================
+[?2004hroot@informer701:~# 
+==================================================================
+ Informer 701 QEMU self-test (Debian 12 Bookworm armhf + systemd)
+ Linux informer701 6.6.0 #1 SMP Sat Oct 31 16:41:38 UTC 2026 armv7l GNU/Linux
+==================================================================
+
+=== 1. Debian 12 Bookworm armhf, glibc и systemd PID 1 ===
+  [PASS] ОС Debian 12 (bookworm) в /etc/os-release
+  [PASS] архитектура dpkg = armhf
+  [PASS] динамический линкер glibc armhf (ld-linux-armhf.so.3)
+  [PASS] GNU bash работает
+  [PASS] PID 1 - реальный systemd
+  [PASS] нет упавших юнитов systemd (--failed пуст)
+  [PASS] корень / смонтирован rw с noatime
+  [PASS] раздел /boot (mmcblk0p1, vfat) смонтирован автоматически и содержит extlinux.conf
+
+=== 2. Оптимизации 24/7: zram swap, tmpfs, journald volatile, /dev/watchdog ===
+  [PASS] сервис informer701-zram активен
+  [PASS] /dev/zram0 подключён как swap в /proc/swaps
+  swaps: /dev/zram0 partition 248MiB prio=100
+  [PASS] /tmp смонтирован в tmpfs (защита SD-карты от износа)
+  [PASS] /var/tmp смонтирован в tmpfs (защита SD-карты от износа)
+  [PASS] /var/log смонтирован в tmpfs (защита SD-карты от износа)
+  [PASS] systemd-journald хранит логи в RAM (/run/log/journal, не на SD)
+  [PASS] аппаратный watchdog /dev/watchdog открыт PID 1 (systemd) и включён в WDOG_MODE
+  [PASS] RuntimeWatchdogSec задан в systemd
+  [PASS] утилита wdt status отрабатывает
+
+=== 3. Сервисы systemd, консоль ttyS0 и политика Restart=always ===
+  [PASS] dropbear.service активен и слушает TCP :22
+  [PASS] haveged.service активен
+  [PASS] dropbear.service имеет Restart=always
+  [PASS] haveged.service имеет Restart=always
+  [PASS] informer701-usbnet.service имеет Restart=always
+  [PASS] informer701-wifi.service имеет Restart=always
+  [PASS] serial-getty@ttyS0 настроен на 115200 и включён в getty.target
+
+=== 4. Эмуляция сети usb0 (192.168.77.1/24), DHCP, SSH и iptables NAT ===
+  [PASS] сборка пары veth usb0 <-> host0 (netns pc) + адрес 192.168.77.1/24
+  [PASS] dnsmasq выдаёт IP по DHCP на usb0, клиент dhclient получает 192.168.77.x
+  [PASS] ping 192.168.77.1 и баннер SSH (Dropbear :22) со стороны ПК
+
+=== 5. Модули ядра 6.6, подписанная regulatory.db и wifi selftest ===
+  [PASS] modprobe cfg80211 + проверка регуляторной базы (iw reg get)
+  [PASS] modprobe mac80211
+[   89.244036] usbcore: registered new interface driver rt2800usb
+  [PASS] modprobe rt2800usb
+[   89.886756] usbcore: registered new interface driver ath9k_htc
+  [PASS] modprobe ath9k_htc
+[   90.142241] usbcore: registered new interface driver carl9170
+  [PASS] modprobe carl9170
+[   90.408777] usbcore: registered new interface driver rtl8xxxu
+  [PASS] modprobe rtl8xxxu
+[   90.646496] usbcore: registered new device driver r8152-cfgselector
+[   90.646861] usbcore: registered new interface driver r8152
+  [PASS] modprobe r8152
+  [PASS] modprobe asix
+  [PASS] modprobe cdc_ether
+  [PASS] modprobe rndis_host
+  [PASS] modprobe exfat
+  [PASS] modprobe ntfs3
+  загружено модулей: 26
+  [PASS] полный самотест /usr/local/bin/wifi selftest
+
+=== 6. Бортовые утилиты Informer 701 (devmem2, clk, regs, diag, bootnext, pkg...) ===
+  [PASS] devmem2 читает регистр CCU PLL1 (0x01c20000)
+  [PASS] clk расшифровывает частоты CCU Allwinner A10
+  [PASS] regs читает регистры CCU/PIO/TWI0/WDOG
+  [PASS] info выводит сводку по плате
+  [PASS] whichboot определяет носители
+  [PASS] savelog сохраняет отчёт diag + journalctl на FAT-раздел /boot/logs/
+  [PASS] bootnext (список / -n safe / откат через informer701-bootinit) работает
+  [PASS] usbnet status отрабатывает штатно
+  [PASS] pkg status и pkg installed работают поверх apt/dpkg
+  [PASS] memtester 2M 1 проходит проверку памяти
+  [PASS] синтаксис bash -n всех скриптов в /usr/local/bin и /usr/local/sbin
+
+==================================================================
+ QTEST_RESULT: PASS (51 проверок успешно, 0 ошибок)
+==================================================================
+[  118.975040] reboot: System halted

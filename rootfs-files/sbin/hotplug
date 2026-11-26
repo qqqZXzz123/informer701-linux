@@ -1,39 +1,21 @@
-#!/bin/sh
-# /sbin/hotplug - помощник uevent для ядра (CONFIG_UEVENT_HELPER_PATH).
-#
-# Зачем: в образе нет udev/eudev. Узлы /dev создаёт devtmpfs, но МОДУЛИ ядра
-# при подключении устройства никто не грузит. Ядро для каждого hotplug-события
-# запускает этот скрипт, передавая:
-#   argv[1] = имя подсистемы ("usb", "net", "block", ...)
-#   окружение: ACTION (add/remove/...), DEVPATH, SUBSYSTEM, MODALIAS, ...
-# Именно по MODALIAS modprobe сам находит нужный драйвер (WiFi-адаптер,
-# exFAT/NTFS, USB-serial, ...). Модули сжаты xz, поэтому modprobe - настоящий
-# (из пакета kmod), а не busybox.
-#
-# Путь к этому файлу зашит в ядро (CONFIG_UEVENT_HELPER_PATH="/sbin/hotplug"),
-# а /etc/init.d/rcS additionally пишет его в /proc/sys/kernel/hotplug -
-# страховка, если кто-то сбросит значение.
-#
-# Отладка: раскомментируйте LOG ниже и смотрите /var/log/hotplug.log.
+#!/bin/bash
+# /sbin/hotplug - ранний помощник uevent для ядра (CONFIG_UEVENT_HELPER_PATH).
+# В полной системе Debian 12 автозагрузку модулей ведёт systemd-udevd (через
+# netlink uevent и libkmod), который сам очищает /proc/sys/kernel/hotplug после
+# старта. Скрипт оставлен для ранней загрузки (до старта udevd) и rescue-режима.
 
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
-# LOG=/var/log/hotplug.log
-# [ -d /var/log ] && echo "$(date +%H:%M:%S) ${1:-?} ${ACTION:-?} ${MODALIAS:-} ${DEVNAME:-}" >> "$LOG" 2>/dev/null
-
-case "${ACTION:-$1}" in
+case "${ACTION:-${1:-}}" in
     add|ADD)
-        [ -n "$MODALIAS" ] || exit 0
-        # -a: MODALIAS может быть списком; -q: не шуметь в консоль
-        /sbin/modprobe -q -a "$MODALIAS" 2>/dev/null
+        [ -n "${MODALIAS:-}" ] || exit 0
+        modprobe -q -a "$MODALIAS" 2>/dev/null || true
         ;;
 esac
 
-# Файловые системы exFAT/NTFS подгруются по требованию mount'ом, но попробуем
-# и здесь: блок-устройство появилось - вдруг это флешка с exFAT.
 if [ "${SUBSYSTEM:-}" = block ] && [ "${ACTION:-}" = add ]; then
-    /sbin/modprobe -q exfat ntfs3 2>/dev/null
+    modprobe -q -a exfat ntfs3 2>/dev/null || true
 fi
 
 exit 0

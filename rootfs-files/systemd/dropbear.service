@@ -1,0 +1,17 @@
+[Unit]
+Description=Dropbear Lightweight SSH Server
+After=network.target
+ConditionKernelCommandLine=!ssh=0
+
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p /etc/dropbear
+ExecStartPre=/bin/bash -c '[ -f /etc/dropbear/dropbear_ed25519_host_key ] || /usr/bin/dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key'
+ExecStartPre=/bin/bash -c '[ -f /etc/dropbear/dropbear_ecdsa_host_key ] || /usr/bin/dropbearkey -t ecdsa -f /etc/dropbear/dropbear_ecdsa_host_key'
+ExecStart=/usr/sbin/dropbear -F -E -R -p 22
+KillMode=process
+Restart=always
+RestartSec=3s
+
+[Install]
+WantedBy=multi-user.target

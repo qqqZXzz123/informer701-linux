@@ -1,0 +1,2 @@
+# Auto-load exFAT / NTFS3 modules when USB storage block devices appear
+SUBSYSTEM=="block", ACTION=="add", RUN+="/sbin/modprobe -q -a exfat ntfs3"

@@ -1,0 +1,15 @@
+[Unit]
+Description=Informer 701 USB Wi-Fi Auto-Connect
+After=network.target systemd-udevd.service informer701-usbnet.service
+ConditionPathExists=/etc/wifi-enabled
+ConditionKernelCommandLine=!nousb=1
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/wifi daemon
+ExecStop=/usr/local/bin/wifi down
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

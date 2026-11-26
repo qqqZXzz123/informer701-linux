@@ -1,45 +1,33 @@
-#!/bin/sh
-# whichboot - какой именно пункт меню U-Boot загрузился.
-#
-# Зачем: имена файлов с логами легко перепутать (был случай, когда лог от
-# пункта safe ушёл как "pinned"). Распознавание точное и двойное:
-#   1) строка append из /boot/extlinux/extlinux.conf дословно становится
-#      /proc/cmdline;
-#   2) но у трёх пар пунктов append одинаковый (pinned/nofreq/wdt и
-#      base-perf/flatvolt) - они различаются только DTB, поэтому сверяем ещё и
-#      /proc/device-tree/model со строкой model внутри файла /boot/<dtb>.
+#!/bin/bash
+# whichboot - какой именно пункт меню U-Boot (/boot/extlinux/extlinux.conf) загрузился
 #
 #   whichboot        - человекочитаемый отчёт
 #   whichboot -l     - только label (для скриптов)
 #   whichboot -n     - только номер пункта
 
-OPT="$1"     # запоминаем сразу: дальше по коду меняются переменные, а не $1
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH LC_ALL=C
 
+OPT="${1:-}"
 CONF=/boot/extlinux/extlinux.conf
-CMD=$(cat /proc/cmdline 2>/dev/null)
-BUILD=$(cat /etc/build-id 2>/dev/null || echo dev)
-MODEL=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
+CMD=$(cat /proc/cmdline 2>/dev/null || true)
+BUILD=$(cat /etc/build-id 2>/dev/null || echo debian12)
+MODEL=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)
 
-norm() { echo "$1" | tr -s ' \t' ' ' | sed -e 's/^ //' -e 's/ $//'; }
+norm() { printf '%s' "$1" | tr -s ' \t' ' ' | sed -e 's/^ //' -e 's/ $//'; }
 CMD_N=$(norm "$CMD")
 
-# Строка model из бинарного DTB. ВАЖНО: busybox tr НЕ поддерживает класс
-# [:print:] (на целевом busybox 1.36.1 "tr -c '[:print:]'" даёт 0 совпадений,
-# на GNU tr работает - поэтому стенд на хосте баг не ловил). Используем grep -a -o
-# с явным диапазоном печатных символов 0x20-0x7e; запасной вариант - tr с тем же
-# диапазоном (в tr диапазон задаётся как ' -~', а не '[:print:]').
 dtbmodel() {
-    _m=$(grep -a -o 'Informer 701[ -~]*' "$1" 2>/dev/null | head -n1)
+    local _m
+    _m=$(grep -a -o 'Informer 701[ -~]*' "$1" 2>/dev/null | head -n1 || true)
     [ -n "$_m" ] && { printf '%s' "$_m"; return 0; }
-    tr -c ' -~' '\n' < "$1" 2>/dev/null | grep -m1 'Informer 701' | sed 's/^[^A-Za-z]*//'
+    tr -c ' -~' '\n' < "$1" 2>/dev/null | grep -m1 'Informer 701' | sed 's/^[^A-Za-z]*//' || true
 }
 
-# --- разбор extlinux.conf ---------------------------------------------------
-# на выходе строки: "<номер>|<label>|<devicetree>|<append>"
 entries() {
     awk '
         function flush() { if (lbl != "") printf "%d|%s|%s|%s\n", n, lbl, dtb, ap }
-        /^[ \t]*label[ \t]/      { flush(); n++; lbl=$2; dtb=""; ap="" ; next }
+        /^[ \t]*label[ \t]/      { flush(); n++; lbl=$2; dtb=""; ap=""; next }
         /^[ \t]*devicetree[ \t]/ { dtb=$2; next }
         /^[ \t]*append[ \t]/     { sub(/^[ \t]*append[ \t]+/, "");
                                    gsub(/[ \t]+/, " "); sub(/^ /, ""); sub(/ $/, "");
@@ -48,18 +36,15 @@ entries() {
     ' "$CONF" 2>/dev/null
 }
 
-LBL=""; NUM=""; DTB=""; AMBIG=""
+LBL=""; NUM=""; DTB=""; AMBIG=""; RESOLVED=""
 if [ -r "$CONF" ]; then
-    # все пункты, у которых append совпал с /proc/cmdline: "номер:label:dtb ..."
     CAND=""
     while IFS='|' read -r n l d a; do
         [ -n "$l" ] || continue
         [ "$a" = "$CMD_N" ] || continue
         CAND="$CAND $n:$l:$d"
-    done <<EOF
-$(entries)
-EOF
-    # 1) среди кандидатов ищем того, у кого model внутри DTB совпал с живой
+    done < <(entries)
+
     if [ -n "$MODEL" ]; then
         for c in $CAND; do
             n=${c%%:*}; rest=${c#*:}; l=${rest%%:*}; d=${rest#*:}
@@ -69,21 +54,20 @@ EOF
             break
         done
     fi
-    # 2) не вышло (DTB не читается / model не совпала) - берём первого кандидата
     if [ -z "$LBL" ] && [ -n "$CAND" ]; then
         for c in $CAND; do
             n=${c%%:*}; rest=${c#*:}; l=${rest%%:*}; d=${rest#*:}
             NUM=$n; LBL=$l; DTB=$d; RESOLVED=by-cmdline
             break
         done
-        NC=$(printf '%s\n' $CAND | grep -c .)
-        [ "$NC" -gt 1 ] && AMBIG="$CAND"
+        # shellcheck disable=SC2086
+        NC=$(printf '%s\n' $CAND | grep -c . || true)
+        [ "${NC:-0}" -gt 1 ] && AMBIG="$CAND"
     fi
 fi
 
 [ -z "$LBL" ] && LBL=unknown
-# имя, пригодное для файла
-SAFE=$(echo "$LBL" | tr -cd 'A-Za-z0-9_-')
+SAFE=$(printf '%s' "$LBL" | tr -cd 'A-Za-z0-9_-')
 [ -z "$SAFE" ] && SAFE=unknown
 
 case "$OPT" in
@@ -97,16 +81,14 @@ if [ -n "$NUM" ]; then
     printf '  пункт меню : %s  (label "%s")\n' "$NUM" "$LBL"
     printf '  devicetree : %s\n' "${DTB:-?}"
 else
-    echo   '  пункт меню : не определён'
-    echo   "  (нет $CONF или /boot не примонтирован - например, initramfs)"
+    echo   '  пункт меню : не определён (загрузка вне меню extlinux или QEMU)'
 fi
 if [ -n "$AMBIG" ]; then
-    echo "  (cmdline одинаков у нескольких пунктов:$AMBIG;"
-    echo "   модель DTB не совпала ни с одной - взят первый, проверьте /boot)"
+    echo "  (cmdline одинаков у нескольких пунктов:$AMBIG)"
 elif [ "$RESOLVED" = by-dtb ]; then
     echo "  (определено по cmdline и модели DTB - точно)"
-else
-    echo "  (определено по cmdline; DTB-модель не сверялась)"
+elif [ "$RESOLVED" = by-cmdline ]; then
+    echo "  (определено по cmdline)"
 fi
 printf '  DTB model  : %s\n' "${MODEL:-?}"
 printf '  cmdline    : %s\n' "$CMD"
@@ -114,8 +96,8 @@ printf '  cmdline    : %s\n' "$CMD"
 CF=/sys/devices/system/cpu/cpu0/cpufreq
 if [ -d "$CF" ]; then
     printf '  cpufreq    : зарегистрирован, governor=%s, cur=%s kHz\n' \
-        "$(cat $CF/scaling_governor 2>/dev/null)" "$(cat $CF/scaling_cur_freq 2>/dev/null)"
-    printf '  OPP        : %s kHz\n' "$(cat $CF/scaling_available_frequencies 2>/dev/null)"
+        "$(cat "$CF/scaling_governor" 2>/dev/null)" "$(cat "$CF/scaling_cur_freq" 2>/dev/null)"
+    printf '  OPP        : %s kHz\n' "$(cat "$CF/scaling_available_frequencies" 2>/dev/null)"
 else
     echo  '  cpufreq    : НЕ зарегистрирован (ядро частотой не управляет)'
 fi
@@ -123,8 +105,8 @@ fi
 PM=no
 for d in /sys/class/regulator/*; do
     [ -e "$d" ] || continue
-    case "$(cat $d/name 2>/dev/null)" in *dcdc2*|*vdd-cpu*) PM=yes;; esac
+    case "$(cat "$d/name" 2>/dev/null)" in *dcdc2*|*vdd-cpu*) PM=yes ;; esac
 done
 echo "  PMIC в ядре : $([ "$PM" = yes ] && echo 'виден (regulators AXP209 зарегистрированы)' || echo 'не виден (regulators AXP209 нет)')"
 echo
-echo "  имя для лога: /boot/diag-$BUILD-$SAFE.txt   (или просто команда: savelog)"
+echo "  сохранить полный лог на FAT-раздел: savelog"

@@ -1,35 +1,25 @@
-#!/bin/sh
-# pkg - пакетный менеджер на Informer 701 (Alpine 3.20 armv7, apk)
+#!/bin/bash
+# pkg - управление пакетами Debian 12 (Bookworm, armhf) на Informer 701
 #
-# Корневая файловая система образа - Alpine minirootfs 3.20 (armv7), поэтому
-# штатный apk в нём был всегда; здесь он настроен и обёрнут в удобные команды.
-# Зеркала уже прописаны в /etc/apk/repositories (main + community, v3.20),
-# ключи подписей - в /etc/apk/keys, корневые сертификаты - /etc/ssl/certs.
-#
-# ВАЖНО ПРО ВРЕМЯ. Батарейки RTC на плате нет, при каждом включении время
-# сбрасывается на 2010 год. Для https-зеркала это смерть: сертификат "ещё не
-# действует". Поэтому перед первым `pkg update` сделайте ОДНО из:
-#   pkg time            - снять время с интернета (нужен уже работающий интернет)
-#   sync-time.bat       - на ПК (ставить время по SSH, лежит в рабочей папке)
-#   pkg repo http       - временно перейти на http-зеркало (без TLS)
-#
-# ИНТЕРНЕТ на плату приходит двумя путями:
-#   wifi connect <SSID> <пароль>   - через USB-WiFi адаптер
-#   usbnet nat                     - через ПК по USB-кабелю ("общий доступ")
-#
-# БЕЗ ИНТЕРНЕТА: скачайте .apk на ПК и положите в каталог apk на разделе BOOT
-# (карта видна в Windows как диск), затем `pkg local`.
-#
-# Команды: pkg help
+# Обёртка над стандартными apt-get / apt-cache / dpkg с учётом особенностей платы:
+#   * батарейки RTC нет -> проверка системного времени перед HTTPS/GPG и команда
+#     `pkg time` (синхронизация по NTP или заголовку HTTP Date);
+#   * диагностика сети/DNS/зеркал (`pkg net`);
+#   * офлайновая установка локальных пакетов `.deb` из `/boot/deb` на vFAT-разделе
+#     SD-карты (`pkg local`);
+#   * автоматическая очистка кэша apt, чтобы не раздувать корневой раздел и не
+#     изнашивать SD-карту.
 
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-export PATH
+export PATH LC_NUMERIC=C
 
-APKDIR=/boot/apk
-BAKED=/etc/apk/baked.txt
-REPOS=/etc/apk/repositories
-MIRROR_HTTPS=https://dl-cdn.alpinelinux.org/alpine/v3.20
-MIRROR_HTTP=http://dl-cdn.alpinelinux.org/alpine/v3.20
+DEBDIR=/boot/deb
+BAKED=/etc/informer701-packages.txt
+SOURCES=/etc/apt/sources.list
+MIRROR_HTTP=http://deb.debian.org/debian
+MIRROR_HTTPS=https://deb.debian.org/debian
+SEC_HTTP=http://deb.debian.org/debian-security
+SEC_HTTPS=https://deb.debian.org/debian-security
 
 say()  { printf '%s\n' "$*"; }
 ok()   { printf '[pkg] %s\n' "$*"; }
@@ -37,296 +27,344 @@ warn() { printf '[pkg] ВНИМАНИЕ: %s\n' "$*" >&2; }
 die()  { printf '[pkg] ОШИБКА: %s\n' "$*" >&2; exit 1; }
 need_root() { [ "$(id -u)" -eq 0 ] || die "нужны права root"; }
 
-have_apk() { command -v apk >/dev/null 2>&1 || die "нет /sbin/apk - образ собран без apk-tools?"; }
+have_apt() { command -v apt-get >/dev/null 2>&1 || die "apt-get не найден"; }
 
 year_now() { date -u +%Y 2>/dev/null; }
 
 time_bad() {
+    local y
     y=$(year_now)
     case "$y" in
-        ""|20[0-1][0-9]) return 0 ;;   # 2000..2019 - время точно не то
+        ""|19[0-9][0-9]|20[0-1][0-9]|202[0-2]) return 0 ;;
         *) return 1 ;;
     esac
 }
 
 check_time() {
     if time_bad; then
-        warn "системное время $(date -u '+%Y-%m-%d %H:%M') - это до 2020 года."
-        say "    https-зеркало с таким временем НЕ открывается (сертификат «ещё не"
-        say "    действует»). Варианты:"
-        say "      pkg time        - снять время из интернета (если интернет уже есть)"
-        say "      pkg repo http   - временно работать по http (без TLS)"
-        say "      sync-time.bat   - поставить время с ПК по SSH (файл в рабочей папке)"
+        warn "системное время $(date -u '+%Y-%m-%d %H:%M') выглядит сброшенным (RTC без батарейки)."
+        say "    Проверка подписей репозитория Debian и HTTPS требуют актуальной даты:"
+        say "      pkg time        - получить точное время из интернета (NTP / HTTP Date)"
+        say "      date -u -s '2026-11-26 12:00:00'   - выставить вручную"
         return 1
     fi
     return 0
 }
 
 net_hint() {
+    local ifc
     ifc=$(ip route 2>/dev/null | awk '/^default/{print $5; exit}')
     if [ -z "$ifc" ]; then
         warn "нет маршрута по умолчанию - интернета нет."
-        say "    wifi connect <SSID> <пароль>   - через WiFi-адаптер"
-        say "    usbnet nat                     - через ПК по USB-кабелю"
+        say "    wifi connect <SSID> <пароль>   - через USB-WiFi адаптер"
+        say "    usbnet nat                     - через ПК по micro-USB кабелю"
         say "    usbnet eth                     - через USB-Ethernet адаптер"
         return 1
     fi
     return 0
 }
 
+save_fake_hwclock() {
+    if command -v fake-hwclock >/dev/null 2>&1; then
+        fake-hwclock save >/dev/null 2>&1 || true
+    fi
+}
+
 cmd_time() {
     need_root
     ok "пытаюсь получить точное время из интернета..."
     net_hint || true
-    if command -v ntpd >/dev/null 2>&1; then
-        for s in pool.ntp.org 0.pool.ntp.org time.google.com; do
-            if ntpd -q -n -p "$s" >/dev/null 2>&1; then
+
+    if command -v ntpdate >/dev/null 2>&1; then
+        for s in pool.ntp.org 0.debian.pool.ntp.org time.google.com; do
+            if ntpdate -u "$s" >/dev/null 2>&1; then
                 ok "время получено по NTP ($s): $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
                 hwclock -w 2>/dev/null || true
+                save_fake_hwclock
                 return 0
             fi
         done
-        warn "NTP не ответил (порт UDP 123 закрыт? DNS?)"
+        warn "NTP не ответил (порт UDP 123 закрыт? пробую HTTP Date...)"
     fi
-    # запасной путь: заголовок Date: от HTTP-сервера зеркала
-    for u in "$MIRROR_HTTP/" "$MIRROR_HTTPS/" http://www.google.com/; do
-        h=$(wget -S --spider --timeout=10 "$u" 2>&1 | grep -i '^ *Date:' | tail -1)
+
+    local u h ds iso
+    for u in "$MIRROR_HTTP/" "http://www.google.com/" "$MIRROR_HTTPS/"; do
+        if command -v curl >/dev/null 2>&1; then
+            h=$(curl -ksI --max-time 10 "$u" 2>/dev/null | grep -i '^Date:' | tail -1 | tr -d '\r')
+        else
+            h=$(wget -S --spider --timeout=10 "$u" 2>&1 | grep -i '^ *Date:' | tail -1 | tr -d '\r')
+        fi
         [ -n "$h" ] || continue
-        ds=$(echo "$h" | sed 's/^[Dd]ate: *//; s/^ *[A-Za-z]\{3\}, *//; s/ *GMT$//; s/^ *//')
-        # "15 Nov 1995 00:00:00" -> "1995-11-15 00:00:00"
+        ds=$(echo "$h" | sed -E 's/^[[:space:]]*[Dd]ate:[[:space:]]*//; s/^[A-Za-z]{3},[[:space:]]*//; s/[[:space:]]*GMT$//')
         iso=$(echo "$ds" | awk '{
             m["Jan"]="01";m["Feb"]="02";m["Mar"]="03";m["Apr"]="04";m["May"]="05";m["Jun"]="06";
             m["Jul"]="07";m["Aug"]="08";m["Sep"]="09";m["Oct"]="10";m["Nov"]="11";m["Dec"]="12";
-            printf "%s-%s-%02d %s", $3, m[$2], $1, $4 }')
+            if (m[$2] != "") printf "%s-%s-%02d %s", $3, m[$2], $1, $4
+        }')
         if [ -n "$iso" ] && date -u -s "$iso" >/dev/null 2>&1; then
             ok "время установлено из HTTP-заголовка ($u): $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
             hwclock -w 2>/dev/null || true
+            save_fake_hwclock
             return 0
         fi
     done
-    warn "время получить не удалось. Можно поставить вручную:"
-    say "    date -u -s '2026-10-31 12:00:00'    (UTC)"
-    say "    или с ПК: sync-time.bat / ssh root@192.168.77.1 date -u -s ..."
+
+    warn "время получить не удалось. Установите вручную:"
+    say "    date -u -s '2026-11-26 12:00:00'"
     return 1
 }
 
+write_sources() {
+    local proto="$1"
+    local m="$MIRROR_HTTP" s="$SEC_HTTP"
+    if [ "$proto" = "https" ]; then
+        m="$MIRROR_HTTPS"
+        s="$SEC_HTTPS"
+    fi
+    cat > "$SOURCES" <<EOF
+deb $m bookworm main contrib non-free-firmware
+deb $m bookworm-updates main contrib non-free-firmware
+deb $s bookworm-security main contrib non-free-firmware
+EOF
+}
+
 cmd_repo() {
-    have_apk
     case "${1:-show}" in
-        show|"") say "зеркала ($REPOS):"; sed 's/^/  /' "$REPOS" ;;
-        http)    need_root
-                 sed -i "s|^https://dl-cdn|$MIRROR_HTTP|" "$REPOS" 2>/dev/null
-                 sed -i "s|^https://|$MIRROR_HTTP/|" "$REPOS" 2>/dev/null
-                 grep -q '^http://' "$REPOS" || printf '%s/main\n%s/community\n' "$MIRROR_HTTP" "$MIRROR_HTTP" > "$REPOS"
-                 ok "зеркала переведены на http (TLS не проверяется - работает при неверных часах)"
-                 sed 's/^/  /' "$REPOS" ;;
-        https)   need_root
-                 printf '%s/main\n%s/community\n' "$MIRROR_HTTPS" "$MIRROR_HTTPS" > "$REPOS"
-                 ok "зеркала на https (нужно правильное время: pkg time)"
-                 sed 's/^/  /' "$REPOS" ;;
-        *)       say "использование: pkg repo [show|http|https]"; return 1 ;;
+        show|"")
+            say "репозитории Debian ($SOURCES):"
+            [ -f "$SOURCES" ] && sed 's/^/  /' "$SOURCES"
+            ;;
+        http)
+            need_root
+            write_sources http
+            ok "зеркала переведены на http (пакеты проверяются GPG-ключами Debian)"
+            sed 's/^/  /' "$SOURCES"
+            ;;
+        https)
+            need_root
+            write_sources https
+            ok "зеркала переведены на https (требуется точное время: pkg time)"
+            sed 's/^/  /' "$SOURCES"
+            ;;
+        *)
+            say "использование: pkg repo [show|http|https]"
+            return 1
+            ;;
     esac
 }
 
 cmd_update() {
-    need_root; have_apk
+    need_root; have_apt
     check_time || true
     net_hint || true
-    ok "apk update ..."
-    if apk update; then
-        ok "индекс пакетов обновлён ($(wc -l < /etc/apk/world 2>/dev/null || echo 0) пакетов в world)"
-        say "  поиск:  pkg search <строка>"
+    ok "apt-get update ..."
+    if DEBIAN_FRONTEND=noninteractive apt-get update; then
+        ok "индекс пакетов Debian 12 (bookworm armhf) обновлён"
+        say "  поиск:     pkg search <строка>"
         say "  установка: pkg add <имя>"
     else
-        warn "apk update не удался."
+        warn "apt-get update завершился с ошибкой."
         check_time || true
-        say "    проверки: pkg net   (интерфейс, маршрут, DNS, пинг зеркала, время)"
-        say "    обход TLS: pkg repo http"
+        say "    диагностика: pkg net"
         return 1
     fi
 }
 
 cmd_add() {
-    need_root; have_apk
-    [ -n "$1" ] || { say "использование: pkg add <пакет> [пакет...]"; return 1; }
+    need_root; have_apt
+    [ $# -gt 0 ] || { say "использование: pkg add <пакет> [пакет...]"; return 1; }
     check_time || true
-    [ -f /var/lib/apk/lists/lock ] || apk update >/dev/null 2>&1
-    ls /var/lib/apk/lists/*APKINDEX* >/dev/null 2>&1 || {
-        warn "индекса пакетов нет - пробую apk update"; apk update || warn "индекс так и не получен"; }
-    ok "apk add $*"
-    apk add "$@"
-    rc=$?
-    [ $rc -eq 0 ] && ok "установлено: $*" || warn "apk add вернул $rc (см. вывод выше)"
-    return $rc
+    if [ -z "$(ls -A /var/lib/apt/lists 2>/dev/null | grep -vE '^lock$|^partial$' || true)" ]; then
+        ok "локальный индекс apt пуст - выполняю apt-get update..."
+        DEBIAN_FRONTEND=noninteractive apt-get update || warn "не удалось обновить индекс apt"
+    fi
+    ok "apt-get install $*"
+    if DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"; then
+        apt-get clean >/dev/null 2>&1 || true
+        ok "установлено: $*"
+        return 0
+    fi
+    warn "apt-get install вернул ошибку"
+    return 1
 }
 
 cmd_del() {
-    need_root; have_apk
-    [ -n "$1" ] || { say "использование: pkg del <пакет> [пакет...]"; return 1; }
-    ok "apk del $*"
-    apk del "$@"
+    need_root; have_apt
+    [ $# -gt 0 ] || { say "использование: pkg del <пакет> [пакет...]"; return 1; }
+    ok "apt-get remove $*"
+    DEBIAN_FRONTEND=noninteractive apt-get remove -y "$@"
 }
 
 cmd_search() {
-    have_apk
-    [ -n "$1" ] || { say "использование: pkg search <строка>"; say "например: pkg search python  |  pkg search alsa  |  pkg search tcpdump"; return 1; }
-    apk search -v "$@" 2>/dev/null | head -40 || warn "нет индекса - сначала pkg update"
+    have_apt
+    [ $# -gt 0 ] || {
+        say "использование: pkg search <строка>"
+        say "например: pkg search python3  |  pkg search tcpdump"
+        return 1
+    }
+    if ! apt-cache search "$@" 2>/dev/null | head -40 | grep -q .; then
+        warn "ничего не найдено или индекс apt пуст (выполните: pkg update)"
+        return 1
+    fi
+    apt-cache search "$@" 2>/dev/null | head -40
     say ""
-    say "подробнее о пакете: pkg info <имя>   (или https://pkgs.alpinelinux.org/packages?name=$1&branch=v3.20&arch=armv7)"
+    say "подробнее о пакете: pkg info <имя>"
 }
 
 cmd_info() {
-    have_apk
-    [ -n "$1" ] || { say "использование: pkg info <пакет>"; return 1; }
-    apk info -v "$1" 2>/dev/null && apk info -d "$1" 2>/dev/null | sed 's/^/  зависит от: /'
-    apk info "$1" 2>/dev/null
-    say ""
-    say "что будет поставлено (без установки): pkg deps $1"
+    [ -n "${1:-}" ] || { say "использование: pkg info <пакет>"; return 1; }
+    dpkg -s "$1" 2>/dev/null || apt-cache show "$1" 2>/dev/null | head -35 || {
+        warn "пакет '$1' не найден (попробуйте сначала pkg update)"
+        return 1
+    }
 }
 
 cmd_deps() {
-    have_apk
-    [ -n "$1" ] || { say "использование: pkg deps <пакет>   (симуляция установки)"; return 1; }
-    apk add --simulate "$@" 2>&1 | head -30
+    have_apt
+    [ $# -gt 0 ] || { say "использование: pkg deps <пакет>   (симуляция установки)"; return 1; }
+    apt-get install -s --no-install-recommends "$@" 2>&1 | head -35
 }
 
 cmd_list() {
-    have_apk
-    say "=== установлено по базе apk ($(apk info 2>/dev/null | wc -l) пакетов) ==="
-    apk info -v 2>/dev/null | sort | sed 's/^/  /' | head -60
+    local cnt
+    cnt=$(dpkg-query -W -f='${Package}\n' 2>/dev/null | wc -l)
+    say "=== установлено в системе dpkg ($cnt пакетов Debian armhf) ==="
+    dpkg-query -W -f='  ${Package} ${Version}\n' 2>/dev/null | sort | head -60
+    [ "$cnt" -gt 60 ] && say "  ... (всего $cnt пакетов; полный список: dpkg -l)"
     say ""
-    cmd_baked
-    say ""
-    say "занято: $(df -h / 2>/dev/null | awk 'NR==2{print $3" из "$4" (свободно "$4")"}')"
+    say "занято на /: $(df -h / 2>/dev/null | awk 'NR==2{print $3" из "$2" (свободно "$4")"}')"
 }
 
 cmd_baked() {
-    say "=== впечено в образ при сборке (не в базе apk, но файлы на месте) ==="
+    say "=== пакеты Debian 12 (Bookworm armhf), включённые при сборке образа ==="
     if [ -f "$BAKED" ]; then
-        sed 's/^/  /' "$BAKED"
+        head -60 "$BAKED" | sed 's/^/  /'
+        local total
+        total=$(wc -l < "$BAKED")
+        [ "$total" -gt 60 ] && say "  ... (всего $total пакетов в $BAKED)"
     else
-        say "  списка нет ($BAKED)"
+        dpkg-query -W -f='  ${Package} ${Version}\n' 2>/dev/null | sort | head -60
     fi
-    say "  (эти пакеты распакованы в корень напрямую; 'apk add <имя>' поставит их"
-    say "   заново и добавит в базу - это нормально)"
 }
 
 cmd_local() {
-    need_root; have_apk
-    d=${1:-$APKDIR}
-    [ -d "$d" ] || die "каталога $d нет (карта BOOT примонтирована? mount | grep boot)"
-    files=$(ls "$d"/*.apk 2>/dev/null)
-    [ -n "$files" ] || die "в $d нет файлов .apk"
-    ok "устанавливаю из $d:"
-    for f in $files; do say "  $(basename "$f") ($(du -h "$f" | cut -f1))"; done
-    # --allow-untrusted: файл лежит вне репозитория, apk не может проверить его
-    # происхождение по индексу; подпись пакета при этом всё равно проверяется.
-    apk add --allow-untrusted $files
-    rc=$?
-    [ $rc -eq 0 ] && ok "готово" || warn "apk add вернул $rc: возможно, не хватает зависимостей - скачайте их .apk в тот же каталог"
-    return $rc
+    need_root
+    local d="${1:-$DEBDIR}"
+    [ -d "$d" ] || die "каталога $d нет (раздел BOOT примонтирован? mount | grep /boot)"
+    shopt -s nullglob
+    local files=("$d"/*.deb)
+    shopt -u nullglob
+    [ "${#files[@]}" -gt 0 ] || die "в $d нет файлов .deb"
+    ok "устанавливаю локальные пакеты из $d:"
+    for f in "${files[@]}"; do
+        say "  $(basename "$f") ($(du -h "$f" | cut -f1))"
+    done
+    if dpkg -i "${files[@]}"; then
+        ok "локальные пакеты установлены"
+        return 0
+    fi
+    warn "dpkg сообщил о недостающих зависимостях - пробую apt-get install -f..."
+    DEBIAN_FRONTEND=noninteractive apt-get install -f -y --no-install-recommends
 }
 
 cmd_net() {
-    say "=== сеть для пакетного менеджера ==="
-    say "  время: $(date -u '+%Y-%m-%d %H:%M:%S UTC')$(time_bad && echo '  <-- НЕПРАВИЛЬНОЕ, https не заработает')"
+    say "=== сеть для пакетного менеджера apt ==="
+    say "  время: $(date -u '+%Y-%m-%d %H:%M:%S UTC')$(time_bad && echo '  <-- ТРЕБУЕТ СИНХРОНИЗАЦИИ (pkg time)')"
     say "  интерфейсы:"
     ip -o -4 addr show 2>/dev/null | awk '{printf "    %-8s %s (%s)\n", $2, $4, $NF}'
     say "  маршруты:"
     ip route 2>/dev/null | sed 's/^/    /'
+    local gw
     gw=$(ip route 2>/dev/null | awk '/^default/{print $3; exit}')
-    say "  DNS: $(grep -h '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{printf "%s ", $2}')"
-    say "  зеркала:"; sed 's/^/    /' "$REPOS" 2>/dev/null
+    say "  DNS: $(awk '/^nameserver/{printf "%s ", $2}' /etc/resolv.conf 2>/dev/null)"
+    say "  репозитории:"
+    [ -f "$SOURCES" ] && sed 's/^/    /' "$SOURCES"
     say "  проверки:"
     if [ -n "$gw" ]; then
         ping -c1 -W3 "$gw" >/dev/null 2>&1 && say "    шлюз $gw: ОК" || say "    шлюз $gw: НЕ отвечает"
     else
         say "    шлюза нет (интернет не настроен)"
     fi
-    ping -c1 -W3 1.1.1.1 >/dev/null 2>&1 && say "    1.1.1.1: ОК" || say "    1.1.1.1: нет (нет маршрута/файрвол)"
-    ping -c1 -W3 dl-cdn.alpinelinux.org >/dev/null 2>&1 && say "    DNS + dl-cdn.alpinelinux.org: ОК" || say "    dl-cdn.alpinelinux.org: не резолвится/не отвечает"
-    if command -v wget >/dev/null 2>&1; then
-        wget -q --spider --timeout=10 "$MIRROR_HTTPS/main/armv7/APKINDEX.tar.gz" 2>/dev/null \
-            && say "    HTTPS зеркала: доступен" \
-            || { say "    HTTPS зеркала: НЕ доступен"
-                 wget -q --spider --timeout=10 "$MIRROR_HTTP/main/armv7/APKINDEX.tar.gz" 2>/dev/null \
-                     && say "    HTTP зеркала: доступен -> сделайте 'pkg repo http'" \
-                     || say "    HTTP зеркала: тоже не доступен"; }
-    fi
-    say ""
-    say "  что делать: pkg time (время) -> pkg update -> pkg add <имя>"
+    ping -c1 -W3 1.1.1.1 >/dev/null 2>&1 && say "    1.1.1.1: ОК" || say "    1.1.1.1: нет ответа"
+    ping -c1 -W3 deb.debian.org >/dev/null 2>&1 && say "    DNS + deb.debian.org: ОК" || say "    deb.debian.org: не резолвится/не отвечает"
 }
 
 cmd_fix() {
-    need_root; have_apk
-    ok "apk fix (перепроверка/переустановка повреждённых пакетов)"
-    apk fix "$@"
+    need_root; have_apt
+    ok "восстановление прерванных пакетов (dpkg --configure -a && apt-get install -f)..."
+    dpkg --configure -a
+    DEBIAN_FRONTEND=noninteractive apt-get install -f -y --no-install-recommends
 }
 
 cmd_cache() {
-    need_root
+    need_root; have_apt
     case "${1:-clean}" in
-        clean) rm -rf /var/cache/apk/* 2>/dev/null; ok "кэш apk очищен" ;;
-        *)     say "кэш: $(du -sh /var/cache/apk 2>/dev/null | cut -f1)" ;;
+        clean)
+            apt-get clean
+            rm -rf /var/cache/apt/archives/*.deb /var/lib/apt/lists/* 2>/dev/null || true
+            ok "кэш apt и списки пакетов очищены"
+            ;;
+        *)
+            say "кэш /var/cache/apt: $(du -sh /var/cache/apt 2>/dev/null | cut -f1)"
+            say "списки /var/lib/apt/lists: $(du -sh /var/lib/apt/lists 2>/dev/null | cut -f1)"
+            ;;
     esac
 }
 
 cmd_space() {
-    say "=== место ==="
-    df -h / /boot /tmp 2>/dev/null | sed 's/^/  /'
-    say "  корень: $(du -sh / 2>/dev/null | cut -f1) (раздел 447 МиБ)"
-    say "  /lib/modules: $(du -sh /lib/modules 2>/dev/null | cut -f1), /lib/firmware: $(du -sh /lib/firmware 2>/dev/null | cut -f1)"
+    say "=== дисковое пространство и память ==="
+    df -h / /boot /tmp /var/tmp /var/log 2>/dev/null | sed 's/^/  /'
+    say ""
+    say "=== ОЗУ и сжатый swap (zram) ==="
+    free -h 2>/dev/null | sed 's/^/  /'
+    if command -v zramctl >/dev/null 2>&1; then
+        zramctl 2>/dev/null | sed 's/^/  /'
+    fi
 }
 
 usage() {
     cat <<EOF
-pkg - пакеты Alpine 3.20 (armv7) на Informer 701
+pkg - управление пакетами Debian 12 Bookworm (armhf) на Informer 701
 
-  pkg update                обновить индекс пакетов (нужен интернет и верное время)
-  pkg add <пакет> ...       установить
-  pkg del <пакет> ...       удалить
-  pkg search <строка>       поиск по имени/описанию
-  pkg info <пакет>          описание и зависимости
-  pkg deps <пакет>          что будет установлено (симуляция, ничего не ставит)
-  pkg list                  что установлено + что впечено в образ
-  pkg local [каталог]       поставить .apk без интернета (по умолчанию /boot/apk)
-  pkg net                   диагностика сети/времени/зеркала перед pkg update
-  pkg time                  синхронизировать время (NTP или HTTP Date) - ОБЯЗАТЕЛЬНО
-                            до первого выхода в https, батарейки RTC на плате нет
-  pkg repo [show|http|https] зеркала; http - обход проблемы с неверным временем
-  pkg fix                   восстановить повреждённые пакеты
-  pkg cache clean           почистить кэш /var/cache/apk
-  pkg space                 сколько места где занято
+  pkg update                обновить индекс пакетов (apt-get update)
+  pkg add <пакет> ...       установить пакет без лишних recommends
+  pkg del <пакет> ...       удалить пакет
+  pkg search <строка>       поиск пакета в репозитории (apt-cache search)
+  pkg info <пакет>          описание и состояние пакета (dpkg / apt-cache)
+  pkg deps <пакет>          симуляция установки и зависимостей
+  pkg list                  список установленных пакетов (dpkg)
+  pkg baked                 список пакетов, вшитых при сборке образа
+  pkg local [каталог]       установить .deb без интернета (по умолчанию /boot/deb)
+  pkg net                   диагностика сети, времени и доступности deb.debian.org
+  pkg time                  синхронизировать системные часы (NTP / HTTP Date)
+  pkg repo [show|http|https] просмотр или переключение протокола зеркала Debian
+  pkg fix                   исправить прерванную установку (dpkg --configure -a)
+  pkg cache clean           очистить кэш apt и списки пакетов
+  pkg space                 свободное место на разделах, tmpfs и zram
 
-Типовой сценарий:
-  wifi connect MyHome secret        (или usbnet nat - интернет через ПК)
-  pkg time && pkg update
-  pkg search python                 pkg add python3 mc alsa-utils
-Без интернета: положите .apk в каталог apk на разделе BOOT (виден из Windows)
-и выполните pkg local.
-
-Корневой раздел 447 МиБ: сейчас занято ~150 МиБ, под пакеты есть ~280 МиБ.
+Напрямую также доступны стандартные команды Debian: apt, apt-get, apt-cache, dpkg.
+Офлайн-установка: скопируйте файлы *.deb для armhf в каталог deb раздела BOOT.
 EOF
 }
 
-cmd=${1:-help}
-shift 2>/dev/null
+cmd="${1:-help}"
+shift 2>/dev/null || true
 case "$cmd" in
-    update|up)     cmd_update ;;
-    add|install|i) cmd_add "$@" ;;
-    del|remove|rm) cmd_del "$@" ;;
+    update|up)      cmd_update ;;
+    add|install|i)  cmd_add "$@" ;;
+    del|remove|rm)  cmd_del "$@" ;;
     search|se|find) cmd_search "$@" ;;
-    info)          cmd_info "$@" ;;
-    deps|sim)      cmd_deps "$@" ;;
-    list|ls)       cmd_list ;;
-    baked)         cmd_baked ;;
-    local)         cmd_local "$@" ;;
-    net|diag)      cmd_net ;;
-    time|clock)    cmd_time ;;
-    repo|mirror)   cmd_repo "$@" ;;
-    fix)           cmd_fix "$@" ;;
-    cache)         cmd_cache "$@" ;;
-    space|df)      cmd_space ;;
+    info|show)      cmd_info "$@" ;;
+    deps|sim)       cmd_deps "$@" ;;
+    list|ls|installed) cmd_list ;;
+    baked)          cmd_baked ;;
+    local)          cmd_local "$@" ;;
+    net|diag)       cmd_net ;;
+    time|clock)     cmd_time ;;
+    repo|mirror)    cmd_repo "$@" ;;
+    fix)            cmd_fix ;;
+    cache)          cmd_cache "$@" ;;
+    space|df|status|st) cmd_space ;;
     help|-h|--help|"") usage ;;
-    *)             usage; exit 1 ;;
+    *)              usage; exit 1 ;;
 esac
