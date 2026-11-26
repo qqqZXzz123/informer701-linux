@@ -72,7 +72,6 @@ jobs:
             debian-archive-keyring \
             qemu-user-static \
             qemu-system-arm \
-            binfmt-support \
             dosfstools \
             mtools \
             e2fsprogs \
@@ -100,7 +99,7 @@ jobs:
       - name: Verify binfmt_misc registration for armhf chroot
         run: |
           if [ ! -e /proc/sys/fs/binfmt_misc/qemu-arm ] && [ ! -e /proc/sys/fs/binfmt_misc/arm ]; then
-            sudo update-binfmts --enable qemu-arm || sudo /usr/lib/systemd/systemd-binfmt || true
+            sudo /usr/lib/systemd/systemd-binfmt || true
           fi
           ls -la /proc/sys/fs/binfmt_misc/
           grep -E 'enabled|interpreter|flags' /proc/sys/fs/binfmt_misc/qemu-arm /proc/sys/fs/binfmt_misc/arm 2>/dev/null || true
@@ -158,7 +157,7 @@ jobs:
 
             **Запись на карту microSD:**
             ```bash
-            xz -dc informer701-${{ env.BUILD }}.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
+            xz -dc informer701-\${{ env.BUILD }}.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
             ```
           files: |
             /tmp/out-debian/*.img.xz
