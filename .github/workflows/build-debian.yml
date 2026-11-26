@@ -42,7 +42,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Determine BUILD identifier
         env:
@@ -59,18 +59,17 @@ jobs:
           echo "BUILD=${CLEAN_BUILD}" >> "$GITHUB_ENV"
           echo "Selected BUILD=${CLEAN_BUILD}"
 
-      - name: Set up QEMU static binfmt_misc for ARM
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm
-
       - name: Install host build and test dependencies
         run: |
+          # На Ubuntu 26.04+ (ubuntu-latest) qemu-user-static стал виртуальным пакетом
+          # с двумя провайдерами (-hwe и базовым), из-за чего apt-get завершается с кодом 100.
+          # Ставим реальный пакет qemu-user, а статический binfmt_misc обработчик с флагом F
+          # (fix_binary для работы внутри chroot) регистрирует следующий шаг setup-qemu-action.
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             debootstrap \
             debian-archive-keyring \
-            qemu-user-static \
+            qemu-user \
             qemu-system-arm \
             dosfstools \
             mtools \
@@ -96,17 +95,30 @@ jobs:
             make \
             ca-certificates
 
+      - name: Set up QEMU static binfmt_misc for ARM
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm
+
       - name: Verify binfmt_misc registration for armhf chroot
         run: |
           if [ ! -e /proc/sys/fs/binfmt_misc/qemu-arm ] && [ ! -e /proc/sys/fs/binfmt_misc/arm ]; then
+            sudo apt-get install -y --no-install-recommends qemu-user-binfmt || true
             sudo /usr/lib/systemd/systemd-binfmt || true
           fi
           ls -la /proc/sys/fs/binfmt_misc/
           grep -E 'enabled|interpreter|flags' /proc/sys/fs/binfmt_misc/qemu-arm /proc/sys/fs/binfmt_misc/arm 2>/dev/null || true
-          arm-linux-gnueabihf-gcc -static -x c - -o /tmp/binfmt-check <<< 'int main(void) { return 0; }'
-          /tmp/binfmt-check
-          rm -f /tmp/binfmt-check
-          /usr/bin/qemu-arm-static -L /usr/arm-linux-gnueabihf ./prebuilt/devmem2 --version
+
+          # Проверяем как прямой запуск armhf ELF через binfmt_misc, так и запуск в пустом chroot (флаг F)
+          mkdir -p /tmp/chroot-check
+          arm-linux-gnueabihf-gcc -static -x c - -o /tmp/chroot-check/binfmt-check <<< 'int main(void) { return 0; }'
+          /tmp/chroot-check/binfmt-check
+          sudo chroot /tmp/chroot-check /binfmt-check
+          rm -rf /tmp/chroot-check
+
+          QEMU_ARM=$(command -v qemu-arm-static || command -v qemu-arm)
+          echo "Using user-mode QEMU binary: $QEMU_ARM"
+          "$QEMU_ARM" -L /usr/arm-linux-gnueabihf ./prebuilt/devmem2 --version
 
       - name: Build Debian 12 (Bookworm) armhf SD image
         env:
@@ -135,7 +147,7 @@ jobs:
           grep -q "QTEST_RESULT: PASS" "$COPYTO/qtest-pass.log"
 
       - name: Upload SD image, SHA256 and QEMU log to Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: informer701-${{ env.BUILD }}
           retention-days: 30
@@ -147,7 +159,7 @@ jobs:
 
       - name: Create GitHub Release on version tags
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           body: |
@@ -157,7 +169,7 @@ jobs:
 
             **Запись на карту microSD:**
             ```bash
-            xz -dc informer701-\${{ env.BUILD }}.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
+            xz -dc informer701-${{ env.BUILD }}.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
             ```
           files: |
             /tmp/out-debian/*.img.xz

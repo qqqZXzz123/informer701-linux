@@ -13,14 +13,14 @@
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
-    debootstrap debian-archive-keyring qemu-user-static binfmt-support qemu-system-arm \
+    debootstrap debian-archive-keyring qemu-user qemu-user-binfmt qemu-system-arm \
     dosfstools mtools e2fsprogs fdisk cpio xz-utils openssl kmod \
     device-tree-compiler u-boot-tools python3 gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
 ```
 
-* `debootstrap` + `debian-archive-keyring` + `qemu-user-static` + `binfmt-support` —
-  проверка подписи репозитория Debian Bookworm (в том числе на хостах Ubuntu) и
-  развёртывание `armhf` окружения Debian 12 в `chroot` через `binfmt_misc`;
+* `debootstrap` + `debian-archive-keyring` + `qemu-user` + `qemu-user-binfmt` —
+  проверка подписи репозитория Debian Bookworm (в том числе на хостах Ubuntu 24.04 / 26.04+)
+  и развёртывание `armhf` окружения Debian 12 в `chroot` через `binfmt_misc` (флаг `F`);
 * `dosfstools`, `mtools`, `e2fsprogs` — создание разделов `BOOT` (FAT16) и `rootfs` (`ext4`);
 * `openssl` — проверка подписи `regulatory.db` ключом `certs/sforshee.x509.pem`;
 * `qemu-system-arm` — автоматический прогон образа в эмуляторе `cubieboard`.

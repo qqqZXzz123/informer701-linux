@@ -69,9 +69,14 @@ if ! arm_binfmt_ok; then
     if ! arm_binfmt_ok && [ -x /usr/lib/systemd/systemd-binfmt ]; then
         /usr/lib/systemd/systemd-binfmt 2>/dev/null || true
     fi
-    if ! arm_binfmt_ok && [ -x /usr/bin/qemu-arm-static ] && [ -w /proc/sys/fs/binfmt_misc/register ]; then
-        echo ':qemu-arm:M::\x7fELF\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x28\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/qemu-arm-static:OCF' \
-            > /proc/sys/fs/binfmt_misc/register 2>/dev/null || true
+    if ! arm_binfmt_ok && [ -w /proc/sys/fs/binfmt_misc/register ]; then
+        for qbin in /usr/libexec/qemu-binfmt/arm-binfmt-P /usr/bin/qemu-arm-static; do
+            if [ -x "$qbin" ]; then
+                echo ":qemu-arm:M::\x7fELF\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x28\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:${qbin}:OCF" \
+                    > /proc/sys/fs/binfmt_misc/register 2>/dev/null || true
+                break
+            fi
+        done
     fi
 fi
 arm_binfmt_ok || {

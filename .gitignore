@@ -1,0 +1,4 @@
+
+# Browser / host user caches
+.cache/
+.local/
