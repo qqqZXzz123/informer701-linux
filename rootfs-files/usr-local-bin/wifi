@@ -41,6 +41,7 @@ wl_list() {
         [ -e "$i" ] || continue
         local n
         n=$(basename "$i")
+        case "$n" in p2p*) continue ;; esac
         if [ -d "$i/wireless" ] || [ -e "$i/phy80211" ]; then say "$n"; fi
     done
 }
@@ -178,7 +179,7 @@ cmd_dev() {
     [ "$n" = 0 ] && say "  (нет) - драйвер адаптера не загрузился или адаптер не воткнут"
     say ""
     say "=== загруженные беспроводные модули ==="
-    lsmod 2>/dev/null | awk 'NR==1 || /cfg80211|mac80211|rt2|rtl|r8712|mt76|ath|carl9170|zd1211|p54|mwifiex|rsi|brcm|vnt|at76|rfkill|libarc4/' | sed 's/^/  /'
+    lsmod 2>/dev/null | awk 'NR==1 || /cfg80211|mac80211|88x2bu|8812|8821|8822|rtw88|rtw89|rt2|rtl|r8712|mt76|ath|carl9170|zd1211|p54|mwifiex|rsi|brcm|vnt|at76|rfkill|libarc4/' | sed 's/^/  /'
     say ""
     say "=== прошивки: чего ядру не хватило ==="
     local miss
@@ -191,14 +192,14 @@ cmd_dev() {
     fi
     say ""
     say "=== последние строки dmesg про USB/WiFi ==="
-    dmesg 2>/dev/null | grep -iE 'usb [0-9]-|new high-speed|new full-speed|wlan|cfg80211|mac80211|firmware' | tail -12 | sed 's/^/  /'
+    dmesg 2>/dev/null | grep -iE 'usb [0-9]-|new high-speed|new full-speed|wlan|wlx|88x2bu|rtw_|rtl88|cfg80211|mac80211|firmware' | tail -12 | sed 's/^/  /'
 }
 
 # ---------------------------------------------------------------- wifi scan
 cmd_scan() {
     local ifc
     ifc=$(require_wl "${1:-}") || return 1
-    say "сканирую на $ifc (3-10 с, адаптер не должен быть занят)..."
+    say "сканирую на $ifc (2.4 / 5 ГГц, 3-10 с, адаптер не должен быть занят)..."
     ip link set "$ifc" up 2>/dev/null || true
     local out
     out=$(iw dev "$ifc" scan 2>&1)
@@ -220,11 +221,18 @@ cmd_scan() {
             else if (wpa) sec = "WPA"
             else if (privacy) sec = "WEP"
             if (rsn && wpa) sec = "WPA/WPA2"
-            printf "%6.1f дБм  ch%-3s %-11s %-5s %-32s %s\n", sig, ch, sec, bssid, (ssid == "" ? "<скрытая сеть>" : ssid), extra
-            bssid=""; ssid=""; sig=0; ch=""; wpa=0; rsn=0; privacy=0; extra=""
+            printf "%6.1f дБм  %-4s ch%-3s %-10s %-17s %-32s %s\n", sig, band, ch, sec, bssid, (ssid == "" ? "<скрытая сеть>" : ssid), extra
+            bssid=""; ssid=""; sig=0; ch=""; band=""; wpa=0; rsn=0; privacy=0; extra=""
         }
         /^BSS /              { flushbss(); bssid = substr($2, 1, 17) }
-        /^[ \t]*freq:/       { f = $2; if (f > 2400000) f = f/1000; if (f < 2500) ch = (f - 2407)/5; else if (f > 4900 && f < 5900) ch = (f - 5000)/5; else if (f > 59000) ch = (f/1000 - 5000)/5; else ch = f }
+        /^[ \t]*freq:/       {
+            f = $2 + 0
+            if (f > 2400000) f = f / 1000
+            if (f == 2484) { ch = 14; band = "2.4G" }
+            else if (f >= 2412 && f < 2500) { ch = int((f - 2407) / 5 + 0.5); band = "2.4G" }
+            else if (f >= 4900 && f < 5900) { ch = int((f - 5000) / 5 + 0.5); band = "5G" }
+            else { ch = int(f); band = "?" }
+        }
         /^[ \t]*signal:/     { sig = $2 }
         /^[ \t]*SSID:/       { ssid = substr($0, index($0, ":") + 2) }
         /^[ \t]*capability:/ { if ($0 ~ /Privacy/) privacy = 1 }
@@ -233,7 +241,7 @@ cmd_scan() {
         END { flushbss() }
     ' | sort -rn | head -40
     say ""
-    say "подключение:  wifi connect '<SSID>' '<пароль>'"
+    say "подключение:  wifi connect '<SSID>' '<пароль>' [$ifc]"
 }
 
 # ---------------------------------------------------------------- wpa_supplicant
@@ -447,7 +455,23 @@ cmd_static() {
 
 # ------------------------------------------------------- мощность передатчика
 tx_now() {
-    iw dev "$1" info 2>/dev/null | awk '/txpower/{print $(NF-1); exit}'
+    local t
+    t=$(iw dev "$1" info 2>/dev/null | awk '/txpower/{print $(NF-1); exit}')
+    if [ -z "$t" ] && command -v iwconfig >/dev/null 2>&1; then
+        t=$(iwconfig "$1" 2>/dev/null | sed -n 's/.*Tx-Power[=:]\([0-9.]*\).*/\1/p' | head -1)
+    fi
+    echo "${t:-?}"
+}
+
+set_tx_dbm() {
+    local ifc="$1" v="$2"
+    ip link set "$ifc" up 2>/dev/null || true
+    iw dev "$ifc" set txpower fixed $(( v * 100 )) 2>/dev/null && return 0
+    iw dev "$ifc" set txpower limit $(( v * 100 )) 2>/dev/null && return 0
+    if command -v iwconfig >/dev/null 2>&1; then
+        iwconfig "$ifc" txpower "${v}dBm" 2>/dev/null && return 0
+    fi
+    return 1
 }
 
 apply_tx() {
@@ -456,7 +480,7 @@ apply_tx() {
     local v
     v=$(head -1 "$TX_FILE" 2>/dev/null | tr -dc '0-9')
     [ -n "$v" ] || return 0
-    if iw dev "$ifc" set txpower fixed $(( v * 100 )) 2>/dev/null; then
+    if set_tx_dbm "$ifc" "$v"; then
         say "  мощность передатчика: ${v} дБм (ограничение из $TX_FILE)"
     fi
 }
@@ -469,22 +493,24 @@ cmd_tx() {
         status|"")
             say "текущая мощность $ifc: $(tx_now "$ifc") дБм"
             say "сохранённое ограничение: $([ -f "$TX_FILE" ] && cat "$TX_FILE" || echo 'нет (полная мощность)')"
-            say "  wifi tx 5     - 5 дБм (минимум тока передатчика при слабом USB-питании)"
-            say "  wifi tx 10    - 10 дБм"
-            say "  wifi tx max   - снять ограничение"
+            say "  wifi tx 5 [$ifc]    - 5 дБм (минимум тока передатчика при слабом USB-питании)"
+            say "  wifi tx 10 [$ifc]   - 10 дБм"
+            say "  wifi tx max [$ifc]  - снять ограничение"
             return 0 ;;
         max|auto|off)
             rm -f "$TX_FILE"
-            iw dev "$ifc" set txpower auto 2>/dev/null || true
+            iw dev "$ifc" set txpower auto 2>/dev/null \
+                || { command -v iwconfig >/dev/null 2>&1 && iwconfig "$ifc" txpower auto 2>/dev/null; } \
+                || true
             ok "$ifc: мощность по умолчанию (auto), $(tx_now "$ifc") дБм"
             return 0 ;;
     esac
     local v
     v=$(printf '%s' "$1" | tr -dc '0-9')
     [ -n "$v" ] || { warn "нужно число дБм (например: wifi tx 5)"; return 1; }
-    [ "$v" -ge 1 ] && [ "$v" -le 20 ] || { warn "допустимо 1..20 дБм"; return 1; }
-    iw dev "$ifc" set txpower fixed $(( v * 100 )) 2>/dev/null \
-        || warn "iw не принял команду (интерфейс должен быть поднят)"
+    [ "$v" -ge 1 ] && [ "$v" -le 30 ] || { warn "допустимо 1..30 дБм"; return 1; }
+    set_tx_dbm "$ifc" "$v" \
+        || warn "драйвер $ifc не принял фиксированную мощность ${v} дБм (проверьте регуляторный лимит: wifi reg)"
     echo "$v" > "$TX_FILE"
     ok "$ifc: мощность ${v} дБм, сохранено в $TX_FILE"
 }
@@ -512,7 +538,10 @@ cmd_connect() {
     ifc=$(require_wl "${3:-}") || return 1
     ensure_conf; apply_reg
     ok "подключаю $ifc к '$ssid'"
+    [ -f "$RUN/hostapd.pid" ] && cmd_ap_off
     stop_wpa "$ifc"
+    ip link set "$ifc" down 2>/dev/null || true
+    iw dev "$ifc" set type managed 2>/dev/null || true
     net_block_del "$ssid"
     if [ -n "$pass" ]; then
         if command -v wpa_passphrase >/dev/null 2>&1; then
@@ -747,35 +776,65 @@ cmd_selftest() {
 
     rm -f "$t"
     CONF="$CONF_SAVE"
+
+    st_eq "режим AP для канала 6 (2.4 ГГц)" "$(ap_hw_mode_for_chan 6)" "g"
+    st_eq "режим AP для канала 36 (5 ГГц)"  "$(ap_hw_mode_for_chan 36)" "a"
+    st_eq "режим AP для канала 149 (5 ГГц)" "$(ap_hw_mode_for_chan 149)" "a"
+
     if [ "$bad" -eq 0 ]; then ok "selftest: пройдено проверок $n, провалов 0"
     else warn "selftest: провалено $bad из $n"; fi
     return "$rc"
 }
 
 # ---------------------------------------------------------------- wifi ap
+ap_hw_mode_for_chan() {
+    local ch="${1:-6}"
+    case "$ch" in ''|*[!0-9]*) echo "g"; return 0 ;; esac
+    if [ "$ch" -ge 36 ]; then echo "a"; else echo "g"; fi
+}
+
+phy_of() {
+    if [ -f "/sys/class/net/$1/phy80211/name" ]; then
+        cat "/sys/class/net/$1/phy80211/name" 2>/dev/null
+    else
+        iw dev "$1" info 2>/dev/null | awk '/wiphy/{print "phy"$2; exit}'
+    fi
+}
+
 cmd_ap() {
     need_root
     case "${1:-}" in
         off) cmd_ap_off; return 0 ;;
-        "")  say "использование: wifi ap <SSID> [пароль] [канал]"; say "остановить: wifi ap off"; return 0 ;;
+        "")  say "использование: wifi ap <SSID> [пароль] [канал 1..13|36..165] [iface]"; say "остановить: wifi ap off"; return 0 ;;
     esac
-    local ssid="$1" pass="${2:-}" ch="${3:-6}"
-    local ifc
-    ifc=$(require_wl "") || return 1
+    local ssid="$1" pass="${2:-}" ch="${3:-6}" req_ifc="${4:-}"
+    local ifc hw_mode phy phy_info
+    ifc=$(require_wl "$req_ifc") || return 1
     command -v hostapd >/dev/null 2>&1 || die "нет hostapd"
     load_stack; apply_reg
+    [ -f "$RUN/hostapd.pid" ] && cmd_ap_off
     stop_wpa "$ifc"; dhcp_stop "$ifc"
     ip addr flush dev "$ifc" 2>/dev/null || true
+    hw_mode=$(ap_hw_mode_for_chan "$ch")
+    phy=$(phy_of "$ifc")
+    phy_info=""
+    [ -n "$phy" ] && phy_info=$(iw phy "$phy" info 2>/dev/null || true)
     mkdir -p "$(dirname "$HOSTAPD_CONF")" "$RUN"
     {
         echo "interface=$ifc"
         echo "driver=nl80211"
         echo "ssid=$ssid"
-        echo "hw_mode=g"
+        echo "hw_mode=$hw_mode"
         echo "channel=$ch"
         echo "country_code=$(cat "$REG_FILE" 2>/dev/null || echo RU)"
         echo "ieee80211d=1"
         echo "wmm_enabled=1"
+        if printf '%s\n' "$phy_info" | grep -q 'HT20'; then
+            echo "ieee80211n=1"
+        fi
+        if [ "$hw_mode" = "a" ] && printf '%s\n' "$phy_info" | grep -q 'VHT Capabilities'; then
+            echo "ieee80211ac=1"
+        fi
         if [ -n "$pass" ]; then
             echo "wpa=2"
             echo "wpa_passphrase=$pass"
@@ -788,7 +847,7 @@ cmd_ap() {
     ip addr add "$AP_IP/24" dev "$ifc" 2>/dev/null || true
     ip link set "$ifc" up 2>/dev/null || true
     hostapd -B -P "$RUN/hostapd.pid" "$HOSTAPD_CONF" >/dev/null 2>&1 \
-        || die "hostapd не стартовал (поддерживает ли адаптер режим AP?)"
+        || die "hostapd не стартовал на $ifc (канал $ch, hw_mode=$hw_mode; проверьте 'iw list' / 'wifi reg')"
     if command -v dnsmasq >/dev/null 2>&1; then
         [ -f "$RUN/dnsmasq-ap.pid" ] && kill "$(cat "$RUN/dnsmasq-ap.pid")" 2>/dev/null || true
         dnsmasq --interface="$ifc" --except-interface=lo --bind-dynamic \
@@ -798,7 +857,9 @@ cmd_ap() {
             --pid-file="$RUN/dnsmasq-ap.pid" >/dev/null 2>&1 \
             && ok "DHCP+DNS на $ifc: адреса $AP_NET.50-$AP_NET.150"
     fi
-    ok "точка доступа '$ssid' на $ifc, канал $ch, адрес платы $AP_IP/24"
+    local band_str="2.4 ГГц"
+    [ "$hw_mode" = "a" ] && band_str="5 ГГц"
+    ok "точка доступа '$ssid' на $ifc ($band_str, канал $ch), адрес платы $AP_IP/24"
     local gw
     gw=$(ip route 2>/dev/null | awk -v cur="$ifc" '/^default/ && $5 != cur {print $5; exit}')
     if [ -n "$gw" ] && command -v iptables >/dev/null 2>&1; then
@@ -818,7 +879,11 @@ cmd_ap_off() {
     [ -f "$RUN/hostapd.pid" ] && kill "$(cat "$RUN/hostapd.pid")" 2>/dev/null || true
     [ -f "$RUN/dnsmasq-ap.pid" ] && kill "$(cat "$RUN/dnsmasq-ap.pid")" 2>/dev/null || true
     rm -f "$RUN/hostapd.pid" "$RUN/dnsmasq-ap.pid" "$RUN/dnsmasq-ap.leases"
-    for ifc in $(wl_list); do ip addr flush dev "$ifc" 2>/dev/null || true; done
+    for ifc in $(wl_list); do
+        ip addr flush dev "$ifc" 2>/dev/null || true
+        ip link set "$ifc" down 2>/dev/null || true
+        iw dev "$ifc" set type managed 2>/dev/null || true
+    done
     echo 0 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true
     ok "точка доступа остановлена"
 }
@@ -895,11 +960,12 @@ wifi - USB-WiFi адаптер на Informer 701 (разъём на месте W
   wifi status              интерфейс, сеть, сигнал, адрес, шлюз, DNS
   wifi log [N]             последние N строк /var/log/wifi.log
   wifi fw                  какие прошивки есть и что просило ядро
-  wifi tx [1..20|max]      мощность передатчика в дБм (/etc/wifi-txpower)
+  wifi tx [1..30|max] [iface] мощность передатчика в дБм (/etc/wifi-txpower)
   wifi ps on|off|status    power save драйвера
   wifi reg [RU|US|...]     регуляторный домен страны
   wifi auto on|off|status  автоподключение при загрузке (systemd)
-  wifi ap SSID [пароль] [канал]   точка доступа (hostapd + dnsmasq 192.168.71.x)
+  wifi ap SSID [пароль] [канал] [iface]
+                           точка доступа 2.4/5 ГГц (hostapd + dnsmasq 192.168.71.x)
   wifi ap off              остановить точку доступа
   wifi share [on|off]      раздать интернет с WiFi на ПК по micro-USB (NAT)
 EOF

@@ -16,7 +16,7 @@ USB2 с управлением VBUS по GPIO PH3), куда подключае�
 * **Базовая ОС Debian 12 (Bookworm) `armhf`**: полноценное окружение `glibc` 2.36,
   GNU `bash`, `systemd` 252, `udev`, `apt`/`dpkg`, Python 3.11.
 * **Загрузка с microSD**: SPL + U-Boot 2024.10, меню `extlinux.conf` (16 профилей
-  частот/питания, по умолчанию `lowopp`), ядро Linux 6.6.0 (104 модуля `.ko.xz`),
+  частот/питания, по умолчанию `lowopp`), ядро Linux 6.6.0 (105 модулей `.ko.xz`),
   раздел `BOOT` на FAT16 (виден с любого ПК) и корневая ФС на `ext4`.
 * **Консоль и удалённый доступ**:
   * UART0 `115200 8N1` на тестпоинтах `TP20` (TX) / `TP21` (RX) с автологином
@@ -34,13 +34,16 @@ USB2 с управлением VBUS по GPIO PH3), куда подключае�
     напрямую PID 1 `systemd` (`RuntimeWatchdogSec=16s`), критичные службы
     (`dropbear`, `haveged`, `informer701-usbnet`, `informer701-wifi`) запущены
     с политикой `Restart=always`.
-* **Wi-Fi**: поддержка USB-адаптеров (Realtek `rtl8xxxu`/`rtlwifi`, Ralink/MediaTek
-  `rt2800usb`/`mt7601u`, Atheros `ath9k_htc`/`carl9170` и др.) + подписанный
-  ключом `sforshee` `regulatory.db`. Утилита `wifi`: `scan`, `connect`,
+* **Wi-Fi (2.4 / 5 ГГц)**: поддержка USB-адаптеров, включая двухдиапазонный
+  **Realtek RTL8812BU / RTL8822BU** (`88x2bu.ko`, 802.11a/b/g/n/ac, `/etc/modprobe.d/blacklist-rtw88.conf`),
+  а также Realtek `rtl8xxxu`/`rtlwifi`, Ralink/MediaTek `rt2800usb`/`mt7601u`,
+  Atheros `ath9k_htc`/`carl9170` и др. + подписанный ключом `sforshee` `regulatory.db`.
+  Утилита `wifi` (интерфейсы `wlan0` и `wlx...`): `scan`, `connect`,
   автоподключение (`informer701-wifi.service`), DHCP (`dhclient`) и статика,
-  точка доступа (`wifi ap` через `hostapd` + `dnsmasq`), раздача интернета
-  (`wifi share` через `iptables-legacy` NAT), лимит мощности (`wifi tx`), `wifi selftest`.
-* **Пакетный менеджер (`apt`/`dpkg` + обёртка `pkg`)**: `pkg time`, `pkg update`,
+  двухдиапазонная точка доступа 2.4 / 5 ГГц (`wifi ap` через `hostapd` + `dnsmasq`),
+  раздача интернета (`wifi share` через `iptables-legacy` NAT), лимит мощности (`wifi tx`), `wifi selftest`.
+* **Пакетный менеджер (`apt`/`dpkg` + обёртка `pkg`)**: подключены полные официальные
+  репозитории Debian 12 (`main contrib non-free non-free-firmware`); `pkg time`, `pkg update`,
   `pkg add <пакет>`, офлайн-установка `.deb` из раздела `BOOT/deb/` (`pkg local`).
 * **Аппаратные утилиты**:
   * акселерометр MMA7660: `accel` (`read`, `watch`, `level`, `raw`, `info`);
@@ -105,7 +108,7 @@ accel                # показания акселерометра MMA7660 и 
   (например, `v1.0.0`) и ручной запуск **Run workflow** (`workflow_dispatch` с
   опциональным `BUILD` ID и флагом полной пересборки ядра/U-Boot `from_source`).
 * **Обязательный контроль качества**: каждый собранный образ загружается в
-  `qemu-system-arm` с реальным `systemd` PID 1 (`scripts/qemu-test.sh`, 51 проверка);
+  `qemu-system-arm` с реальным `systemd` PID 1 (`scripts/qemu-test.sh`, 55 проверок);
   при любой ошибке сборка останавливается и битый образ не публикуется.
 * **Скачивание артефактов**: во вкладке **Actions** выберите завершённый прогон и в
   блоке **Artifacts** скачайте архив `informer701-<BUILD>` (хранится 30 дней:
@@ -120,7 +123,7 @@ accel                # показания акселерометра MMA7660 и 
 
 ```bash
 ./scripts/build-image.sh    # сборка в /tmp -> /tmp/out-debian/informer701-debian.img.xz
-./scripts/qemu-test.sh      # загрузка реального systemd PID 1 в QEMU (51 автотест)
+./scripts/qemu-test.sh      # загрузка реального systemd PID 1 в QEMU (55 автотестов)
 ```
 
 ## Железо и лицензии

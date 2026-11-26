@@ -244,11 +244,11 @@ for s in "$RF"/usr-local-sbin/*; do
 done
 install -m 0755 "$RF/sbin/hotplug" "$DEST/sbin/hotplug"
 
-echo "[rootfs] 6/7 конфигурация системы (/etc, fstab с tmpfs, sysctl, udev, systemd)"
+echo "[rootfs] 6/7 конфигурация системы (/etc, fstab с tmpfs, sysctl, udev, modprobe, systemd)"
 mkdir -p \
     "$DEST/boot" "$DEST/tmp" "$DEST/var/tmp" "$DEST/var/log" \
     "$DEST/etc/sysctl.d" "$DEST/etc/tmpfiles.d" "$DEST/etc/udev/rules.d" \
-    "$DEST/etc/modules-load.d" "$DEST/etc/profile.d" \
+    "$DEST/etc/modprobe.d" "$DEST/etc/modules-load.d" "$DEST/etc/profile.d" \
     "$DEST/etc/informer701" "$DEST/etc/wifi/networks.d" "$DEST/etc/dropbear"
 chmod 1777 "$DEST/tmp" "$DEST/var/tmp"
 chmod 0700 "$DEST/etc/wifi" "$DEST/etc/wifi/networks.d"
@@ -257,6 +257,7 @@ install -m 0644 "$RF/etc/fstab" "$DEST/etc/fstab"
 install -m 0644 "$RF/etc/sysctl.d/90-informer701.conf" "$DEST/etc/sysctl.d/90-informer701.conf"
 install -m 0644 "$RF/etc/tmpfiles.d/informer701-varlog.conf" "$DEST/etc/tmpfiles.d/informer701-varlog.conf"
 install -m 0644 "$RF/etc/udev/rules.d/90-informer701.rules" "$DEST/etc/udev/rules.d/90-informer701.rules"
+install -m 0644 "$RF/etc/modprobe.d/blacklist-rtw88.conf" "$DEST/etc/modprobe.d/blacklist-rtw88.conf"
 
 echo "informer701" > "$DEST/etc/hostname"
 cat > "$DEST/etc/hosts" <<'EOF'

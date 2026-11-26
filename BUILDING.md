@@ -64,25 +64,26 @@ sudo apt-get install -y \
 
 Скрипт создаёт разреженную копию образа в `/dev/shm`, загружает реальное ядро
 `prebuilt/zImage` и **реальный `systemd` (PID 1)** в `qemu-system-arm -M cubieboard -m 512M`
-и выполняет 51 автоматическую проверку:
-* загрузка Debian 12 Bookworm `armhf`, `glibc`, `bash`, отсутствие упавших юнитов (`systemctl --failed`);
+и выполняет 55 автоматических проверок:
+* загрузка Debian 12 Bookworm `armhf`, `glibc`, `bash`, полные репозитории `/etc/apt/sources.list` (`main contrib non-free non-free-firmware`), отсутствие упавших юнитов (`systemctl --failed`);
 * монтирование `/` (`noatime`) и `/boot` (`extlinux.conf`, каталог `deb/`);
 * работа сжатого swap `/dev/zram0` (`informer701-zram.service`);
 * размещение `/tmp`, `/var/tmp`, `/var/log` в `tmpfs` и логов `journald` в `/run/log/journal` (RAM);
 * активация аппаратного `/dev/watchdog` со стороны PID 1 `systemd` и бита `WDOG_EN` в регистре `WDOG_MODE` (`0x01c20c94`);
 * работа `dropbear.service` (`:22`), `haveged.service` и политики `Restart=always`;
 * сетевой стенд `usb0` (`192.168.77.1/24`) через пару `veth` и сетевой namespace: выдача адреса по DHCP (`dnsmasq` -> `dhclient`), `ping` и ответ SSH-баннера Dropbear;
-* загрузка `cfg80211` + `regulatory.db`, всех ключевых Wi-Fi/USB/FS модулей и прогон `wifi selftest`;
+* загрузка `cfg80211` + `regulatory.db`, всех ключевых Wi-Fi/USB/FS модулей, включая двухдиапазонный драйвер **`88x2bu`** (RTL8812BU/RTL8822BU, проверка совпадения `vermagic` с `uname -r`, зависимостей `cfg80211` и `/etc/modprobe.d/blacklist-rtw88.conf`), и прогон `wifi selftest`;
 * работа бортовых утилит: `devmem2`, `clk`, `regs`, `info`, `whichboot`, `savelog`, `bootnext`, `usbnet`, `pkg`, `memtester`.
 
 Лог успешного прогона сохранён в [`docs/qtest-pass.log`](docs/qtest-pass.log).
 
-## 4. Полная пересборка с нуля (U-Boot + ядро 6.6 + модули + Debian 12)
+## 4. Полная пересборка с нуля (U-Boot + ядро 6.6 + 88x2bu + Debian 12)
 
-При необходимости пересобрать загрузчик и ядро из исходных текстов:
+При необходимости пересобрать загрузчик, ядро и внешний модуль `88x2bu.ko` из исходных текстов:
 
 ```bash
-./scripts/build-all.sh      # качает U-Boot 2024.10 и Linux 6.6 в /tmp/informer701-srcbuild
+./scripts/build-all.sh          # качает U-Boot 2024.10, Linux 6.6 и драйвер 88x2bu в /tmp/informer701-srcbuild
+./scripts/build-rtl8812bu.sh    # отдельно пересобирает только модуль 88x2bu.ko в prebuilt/modules-6.6.0-b021.tar.xz
 ```
 
 Конфигурация ядра хранится в `kernel/kernel.config-b021` (включая `CONFIG_ZSMALLOC=m`,

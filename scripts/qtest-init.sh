@@ -43,6 +43,12 @@ check "ОС Debian 12 (bookworm) в /etc/os-release" \
     grep -q 'VERSION_CODENAME=bookworm' /etc/os-release
 check "архитектура dpkg = armhf" \
     bash -c '[ "$(dpkg --print-architecture)" = "armhf" ]'
+check "/etc/apt/sources.list содержит полные репозитории Debian 12 (main contrib non-free non-free-firmware)" \
+    bash -e -c '
+        grep -qE "^deb .* bookworm main contrib non-free non-free-firmware$" /etc/apt/sources.list
+        grep -qE "^deb .* bookworm-updates main contrib non-free non-free-firmware$" /etc/apt/sources.list
+        grep -qE "^deb .* bookworm-security main contrib non-free non-free-firmware$" /etc/apt/sources.list
+    '
 check "динамический линкер glibc armhf (ld-linux-armhf.so.3)" \
     test -e /lib/ld-linux-armhf.so.3
 check "GNU bash работает" \
@@ -143,9 +149,23 @@ check "modprobe cfg80211 + проверка регуляторной базы (i
     fi
     iw reg get | grep -q country
 '
-for m in mac80211 rt2800usb ath9k_htc carl9170 rtl8xxxu r8152 asix cdc_ether rndis_host exfat ntfs3; do
+for m in mac80211 rt2800usb ath9k_htc carl9170 rtl8xxxu 88x2bu r8152 asix cdc_ether rndis_host exfat ntfs3; do
     check "modprobe $m" modprobe "$m"
 done
+check "modinfo 88x2bu: vermagic строго совпадает с uname -r и прописаны USB ID RTL8812BU" bash -e -c '
+    K=$(uname -r)
+    VM=$(modinfo -F vermagic 88x2bu)
+    echo "uname=$K vermagic=$VM"
+    case "$VM" in
+        "$K "*) ;;
+        *) echo "несовпадение vermagic!"; exit 1 ;;
+    esac
+    modinfo -F depends 88x2bu | grep -q cfg80211
+    modinfo 88x2bu | grep -qi "v0BDApB812"
+    lsmod | grep -q "^88x2bu "
+'
+check "/etc/modprobe.d/blacklist-rtw88.conf блокирует rtw88_8822bu" \
+    grep -q "^blacklist rtw88_8822bu$" /etc/modprobe.d/blacklist-rtw88.conf
 echo "  загружено модулей: $(wc -l < /proc/modules)"
 
 check "полный самотест /usr/local/bin/wifi selftest" \

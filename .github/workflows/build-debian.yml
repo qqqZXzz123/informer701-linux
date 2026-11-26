@@ -14,7 +14,12 @@ on:
         default: ''
         type: string
       from_source:
-        description: 'Пересобрать U-Boot 2024.10 и ядро Linux 6.6 с нуля (scripts/build-all.sh)'
+        description: 'Пересобрать U-Boot 2024.10, ядро Linux 6.6 и модуль 88x2bu.ko с нуля (scripts/build-all.sh)'
+        required: false
+        default: false
+        type: boolean
+      rebuild_88x2bu:
+        description: 'Пересобрать только модуль драйвера Realtek RTL8812BU (88x2bu.ko) из исходников'
         required: false
         default: false
         type: boolean
@@ -88,6 +93,8 @@ jobs:
             libssl-dev \
             libelf-dev \
             curl \
+            git \
+            make \
             ca-certificates
 
       - name: Verify binfmt_misc registration for armhf chroot
@@ -105,11 +112,15 @@ jobs:
       - name: Build Debian 12 (Bookworm) armhf SD image
         env:
           INPUT_FROM_SOURCE: ${{ inputs.from_source }}
+          INPUT_REBUILD_88X2BU: ${{ inputs.rebuild_88x2bu }}
         run: |
           mkdir -p "$COPYTO"
           if [ "${INPUT_FROM_SOURCE:-false}" = "true" ]; then
             sudo BUILD="$BUILD" COPYTO="$COPYTO" bash scripts/build-all.sh
           else
+            if [ "${INPUT_REBUILD_88X2BU:-false}" = "true" ] || ! tar -tJf prebuilt/modules-6.6.0-b021.tar.xz | grep -q '88x2bu\.ko'; then
+              bash scripts/build-rtl8812bu.sh
+            fi
             sudo BUILD="$BUILD" COPYTO="$COPYTO" bash scripts/build-image.sh
           fi
           sudo chown -R "$(id -u):$(id -g)" "$COPYTO"
@@ -143,7 +154,7 @@ jobs:
           body: |
             Готовый загрузочный образ **Debian 12 (Bookworm) `armhf`** (`glibc`, `bash`, `systemd`, `apt`, Linux 6.6.0, U-Boot 2024.10) для платы **Explay Informer 701** (`N708H6`, Allwinner A10, 512 МиБ ОЗУ).
 
-            Проверен автоматическим стендом `qemu-test.sh` (51 проверка: `QTEST_RESULT: PASS`).
+            Проверен автоматическим стендом `qemu-test.sh` (55 проверок: `QTEST_RESULT: PASS`).
 
             **Запись на карту microSD:**
             ```bash

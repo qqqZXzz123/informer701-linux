@@ -28,12 +28,13 @@ JOBS="${JOBS:-$(nproc)}"
 
 UBOOT_VER=2024.10
 KVER=6.6
+RTL88X2BU_REPO="${RTL88X2BU_REPO:-https://github.com/morrownr/88x2bu-20210702.git}"
 
 export ARCH=arm
 export CROSS_COMPILE=arm-linux-gnueabihf-
 
 for t in "${CROSS_COMPILE}gcc" flex bison bc dtc mkimage swig python3 \
-         mkfs.vfat mcopy mkfs.ext4 cpio xz debootstrap curl; do
+         mkfs.vfat mcopy mkfs.ext4 cpio xz debootstrap curl git; do
     command -v "$t" >/dev/null || { echo "нужна утилита хоста: $t (см. BUILDING.md)" >&2; exit 1; }
 done
 
@@ -69,6 +70,7 @@ grep -q 'sun4i-a10-informer-701.dtb' arch/arm/boot/dts/allwinner/Makefile || \
         arch/arm/boot/dts/allwinner/Makefile
 
 mkdir -p certs
+touch .scmversion
 cp "$HERE/certs/sforshee.x509.pem" certs/sforshee.x509.pem
 cp "$HERE/kernel/kernel.config-b021" .config
 make olddefconfig
@@ -81,7 +83,41 @@ MOD_STAGE="$WORK/modstage"
 rm -rf "$MOD_STAGE"
 make INSTALL_MOD_PATH="$MOD_STAGE" INSTALL_MOD_STRIP=1 modules_install
 KREL=$(ls "$MOD_STAGE/lib/modules" | head -1)
+
+# --- 2b. Внешний двухдиапазонный модуль Realtek RTL8812BU/8822BU (88x2bu.ko) --
+echo "=== [2b/5] драйвер Realtek RTL8812BU (88x2bu.ko для $KREL) ==="
+KSRC_DIR="$WORK/src/linux-${KVER}"
+cd "$WORK/src"
+[ -d 88x2bu-20210702 ] || git clone --depth 1 "$RTL88X2BU_REPO" 88x2bu-20210702
+make -j"$JOBS" \
+    ARCH=arm \
+    CROSS_COMPILE="$CROSS_COMPILE" \
+    KVER="$KREL" \
+    KSRC="$KSRC_DIR" \
+    -C 88x2bu-20210702 \
+    modules
+EXT_STAGE="$WORK/extmodstage"
+rm -rf "$EXT_STAGE"
+make -C "$KSRC_DIR" \
+    M="$WORK/src/88x2bu-20210702" \
+    ARCH=arm \
+    CROSS_COMPILE="$CROSS_COMPILE" \
+    INSTALL_MOD_PATH="$EXT_STAGE" \
+    INSTALL_MOD_STRIP=1 \
+    modules_install
+BUILT_88X2BU=$(find "$EXT_STAGE" -name '88x2bu.ko*' | head -1)
+[ -n "$BUILT_88X2BU" ] || { echo "ОШИБКА: модуль 88x2bu не собран!" >&2; exit 1; }
+mkdir -p "$MOD_STAGE/lib/modules/$KREL/kernel/drivers/net/wireless/realtek/88x2bu"
+install -m 0644 "$BUILT_88X2BU" \
+    "$MOD_STAGE/lib/modules/$KREL/kernel/drivers/net/wireless/realtek/88x2bu/$(basename "$BUILT_88X2BU")"
+rm -rf "$EXT_STAGE"
+
 rm -f "$MOD_STAGE/lib/modules/$KREL/build" "$MOD_STAGE/lib/modules/$KREL/source"
+if command -v depmod >/dev/null 2>&1; then
+    depmod -a -b "$MOD_STAGE" "$KREL"
+elif [ -x /sbin/depmod ]; then
+    /sbin/depmod -a -b "$MOD_STAGE" "$KREL"
+fi
 tar -C "$MOD_STAGE" -cJf "$WORK/stage/modules-${KREL}.tar.xz" lib/modules
 rm -rf "$MOD_STAGE"
 
