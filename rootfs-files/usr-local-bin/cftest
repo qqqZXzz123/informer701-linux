@@ -1,114 +1,59 @@
-#!/bin/sh
-# cftest [цель_кГц] - проверка, выживает ли плата при смене частоты CPU.
-#
-# ВНИМАНИЕ: если плата зависнет на переходе - это и есть ответ на вопрос
-# "почему загрузка с полной OPP-таблицей молча замирает". Консоль при этом
-# не отвечает, помогает только выключение питания. Ничего не портит:
-# частота и напряжение восстанавливаются командой, но если плата умерла -
-# просто включите питание заново (загрузится пункт safe).
-#
-# Как переключаем (в этом ядре собраны только performance/powersave/schedutil,
-# говернора userspace НЕТ, поэтому scaling_setspeed не работает):
-#   1. если userspace всё же доступен - через scaling_setspeed (точный способ);
-#   2. иначе прижимаем scaling_max_freq к цели - работает с любым говернором,
-#      в том числе с performance (он всегда держит максимально разрешённую).
-#
-# Примеры:
-#   cftest            # вниз, на минимальную частоту из таблицы
-#   cftest 912000     # на 912 МГц
-#   cftest 624000     # на 624 МГц (есть только в полной таблице)
+#!/bin/bash
+# cftest [секунды] - прогон по всем частотам cpufreq с контролем VDD-CPU на AXP209
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
+DUR="${1:-5}"
 CF=/sys/devices/system/cpu/cpu0/cpufreq
-
-pll() {
-    # реальная частота по регистру PLL1 - чтобы видеть, что переход состоялся
-    devmem2 0x01c20000 w 2>/dev/null | tail -1
-}
-gov() { cat "$CF/scaling_governor" 2>/dev/null; }
-
 if [ ! -d "$CF" ]; then
-    echo "cpufreq sysfs отсутствует."
-    echo "Причины: в DTB нет operating-points / cpu-supply, PMIC не прозондирован,"
-    echo "или в cmdline есть initcall_blacklist=cpufreq_dt_platdev_init."
-    echo "Для теста загрузитесь пунктом 'base', 'base-perf' или 'flatvolt'."
+    echo "cpufreq недоступен ($CF нет). Возможные причины:"
+    echo "  - загружен вариант DTB без таблицы OPP (например nopmic)"
+    echo "  - регулятор vdd-cpu (dcdc2 на AXP209) не зарегистрировался -> смотрите 'diag'"
     exit 1
 fi
 
-FMAX=$(cat "$CF/cpuinfo_max_freq" 2>/dev/null)
-FMIN=$(cat "$CF/cpuinfo_min_freq" 2>/dev/null)
-CUR=$(cat "$CF/scaling_cur_freq" 2>/dev/null)
-TARGET=${1:-$FMIN}
-
-echo "=== состояние cpufreq ==="
-printf '  driver    = %s\n' "$(cat $CF/scaling_driver 2>/dev/null)"
-printf '  governor  = %s\n' "$(gov)"
-printf '  cur_freq  = %s kHz\n' "$CUR"
-printf '  min/max   = %s / %s kHz\n' "$FMIN" "$FMAX"
-printf '  available = %s\n' "$(cat $CF/scaling_available_frequencies 2>/dev/null)"
-printf '  governors = %s\n' "$(cat $CF/scaling_available_governors 2>/dev/null)"
-echo
-echo "  PLL1 (0x01c20000) сейчас: $(pll)"
-echo
-
-if [ -z "$TARGET" ]; then
-    echo "не удалось определить целевую частоту"; exit 1
-fi
-case "$TARGET" in
-    ''|*[!0-9]*) echo "цель должна быть числом (кГц), например 912000"; exit 1;;
-esac
-
-# --- выбор способа -----------------------------------------------------------
-MODE=max
-if (echo userspace > "$CF/scaling_governor") 2>/dev/null; then
-    MODE=setspeed
-    echo ">>> способ 1: говернор userspace + scaling_setspeed"
+BUS=$(i2cbus)
+OLD_GOV=$(cat "$CF/scaling_governor")
+if ! grep -qw userspace "$CF/scaling_available_governors"; then
+    echo "ВНИМАНИЕ: governor 'userspace' недоступен (есть: $(cat "$CF/scaling_available_governors"))."
+    echo "Переключаю scaling_min_freq = scaling_max_freq для фиксации частоты."
+    MODE=minmax
 else
-    echo ">>> способ 2: говернор $(gov) + scaling_max_freq"
-    echo "    (userspace в этом ядре не собран - прижимаем максимум к цели;"
-    echo "     performance всегда держит максимально разрешённую частоту)"
+    echo userspace > "$CF/scaling_governor"
+    MODE=userspace
 fi
+OLD_MIN=$(cat "$CF/scaling_min_freq")
+OLD_MAX=$(cat "$CF/scaling_max_freq")
+trap 'echo "$OLD_MIN" > "$CF/scaling_min_freq" 2>/dev/null; echo "$OLD_MAX" > "$CF/scaling_max_freq" 2>/dev/null; echo "$OLD_GOV" > "$CF/scaling_governor" 2>/dev/null' EXIT INT TERM
 
-setfreq() {
-    if [ "$MODE" = setspeed ]; then
-        echo "$1" > "$CF/scaling_setspeed" 2>/dev/null
+FREQS=$(cat "$CF/scaling_available_frequencies")
+echo "Доступные точки: $FREQS (кГц). По ${DUR} с под нагрузкой на каждую."
+printf '%-10s %-10s %-12s %-12s %s\n' "цель кГц" "факт кГц" "PLL1 МГц" "DCDC2 мВ" "результат"
+
+for f in $FREQS; do
+    if [ "$MODE" = userspace ]; then
+        echo "$f" > "$CF/scaling_setspeed"
     else
-        echo "$1" > "$CF/scaling_max_freq" 2>/dev/null
+        echo "$f" > "$CF/scaling_max_freq" 2>/dev/null || true
+        echo "$f" > "$CF/scaling_min_freq" 2>/dev/null || true
+        echo "$f" > "$CF/scaling_max_freq" 2>/dev/null || true
     fi
-}
-
-echo
-echo ">>> ПЕРЕХОД НА ${TARGET} kHz (сейчас ${CUR} kHz)"
-echo ">>> если консоль замрёт - виновата перестройка pll-core/напряжения VDD-CPU"
-echo ">>> в пункте 'flatvolt' напряжение при этом НЕ меняется (обе точки @1.4 В)"
-echo -n ">>> "; sleep 1; echo -n "3 "; sleep 1; echo -n "2 "; sleep 1; echo "1"
-setfreq "$TARGET"
-sleep 2
-echo
-echo "=== плата жива после перехода ==="
-NOW=$(cat $CF/scaling_cur_freq 2>/dev/null)
-printf '  cur_freq = %s kHz\n' "$NOW"
-if [ "$NOW" = "$TARGET" ]; then
-    echo "  ВЕРДИКТ: частота действительно сменилась на $TARGET kHz"
-else
-    echo "  ВЕРДИКТ: частота НЕ сменилась (осталась $NOW kHz) - цель $TARGET kHz"
-    echo "           недоступна в этой OPP-таблице или переход отклонён ядром"
-fi
-echo "  PLL1 (0x01c20000) = $(pll)"
-clk 2>/dev/null | head -6
-dmesg | tail -6
-echo
-
-echo ">>> снимаю ограничение: scaling_max_freq = ${FMAX} kHz"
-setfreq "$FMAX"
-sleep 2
-BACK=$(cat $CF/scaling_cur_freq 2>/dev/null)
-printf '  cur_freq = %s kHz\n' "$BACK"
-echo "  PLL1 (0x01c20000) = $(pll)"
-if [ "$BACK" != "$FMAX" ]; then
-    echo "  (это не сбой: ограничение снято, а частоту теперь выбирает governor."
-    echo "   schedutil на простой плате сразу снижает её - в b015 так и было:"
-    echo "   1008 -> 864 -> 624 МГц при неизменных 1.4 В, и плата оставалась живой)"
-fi
-echo
-echo "Готово: переход частоты прошёл успешно, плата жива."
-echo "Можно пробовать другие точки: cftest 864000 / cftest 624000"
+    sleep 1
+    ( dd if=/dev/zero bs=65536 count=2000 2>/dev/null | md5sum >/dev/null ) &
+    LOAD=$!
+    sleep "$DUR"
+    kill "$LOAD" 2>/dev/null; wait "$LOAD" 2>/dev/null || true
+    cur=$(cat "$CF/scaling_cur_freq")
+    d2=$(i2cget -f -y "$BUS" 0x34 0x23 2>/dev/null || true)
+    mv="?"
+    [ -n "$d2" ] && mv=$(( 700 + 25 * (d2 & 0x3f) ))
+    p1=$(devmem2 0x01c20000 w 2>/dev/null | awk '/Read at address/{print $NF}')
+    if [ -n "$p1" ]; then
+        v=$((p1))
+        n=$(( (v >> 8) & 0x1f )); k=$(( ((v >> 4) & 3) + 1 )); p=$(( 1 << ((v >> 16) & 3) ))
+        [ "$n" -eq 0 ] && n=1
+        pll=$(( 24 * n * k / p ))
+    else pll="?"; fi
+    printf '%-10s %-10s %-12s %-12s %s\n' "$f" "$cur" "$pll" "$mv" "OK"
+done
+echo "Все точки пройдены без зависания."

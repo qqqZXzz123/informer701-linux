@@ -1,78 +1,87 @@
-#!/bin/sh
-# clk - реальная частота CPU по регистрам CCU Allwinner A10 (читается через devmem2)
-CCU=0x01c20000
-rd32() { devmem2 "$1" 2>/dev/null | awk '/^Read at address/ {print $NF}'; }
+#!/bin/bash
+# clk - расшифровка частот Allwinner A10 (sun4i) напрямую из регистров CCU
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
-PLL1=$(rd32 $CCU)
-CFG=$(rd32 0x01c20054)
+r32() {
+    devmem2 "$1" w 2>/dev/null | awk '/Read at address/ {print $NF}'
+}
 
-if [ -r /sys/kernel/debug/clk/clk_summary ]; then
-    echo "=== clk_summary (debugfs): CPU, шины, нужные PLL ==="
-    head -1 /sys/kernel/debug/clk/clk_summary
-    # только точные имена: иначе список забивают дети apb1-* (uart1..7, ps2, can)
-    # и до pll-core/cpu/axi/ahb дело не доходит
-    grep -E '(^|[[:space:]])(osc24M|osc32k|pll-core|cpu|axi|ahb|apb0|apb1|mbus|pll-periph|pll-periph-sata|pll-periph-base|pll-video0|pll-ddr|mmc0|mmc1)[[:space:]]' \
-        /sys/kernel/debug/clk/clk_summary | head -20
-    echo "  (весь список: cat /sys/kernel/debug/clk/clk_summary)"
-    echo
-fi
+PLL1_HEX=$(r32 0x01c20000)
+DIV_HEX=$(r32 0x01c20054)
+PLL5_HEX=$(r32 0x01c20020)
+PLL6_HEX=$(r32 0x01c20028)
+APB1_HEX=$(r32 0x01c20058)
+MMC0_HEX=$(r32 0x01c20088)
 
-echo "=== CCU (0x01c20000) ==="
-printf '  PLL1_CPU_CTRL (0x00) = %s\n' "$PLL1"
-printf '  CPU_AXI_AHB_APB0_CFG (0x54) = %s\n' "$CFG"
-
-if [ -z "$PLL1" ] || [ -z "$CFG" ]; then
-    echo "  devmem2 не смог прочитать регистры (нужен CONFIG_DEVMEM и права root)"
+if [ -z "$PLL1_HEX" ] || [ -z "$DIV_HEX" ]; then
+    echo "ОШИБКА: не удалось прочитать CCU через /dev/mem (нужен root и CONFIG_DEVMEM=y)" >&2
     exit 1
 fi
 
-en=$(( (PLL1 >> 31) & 1 ))
-p=$(( (PLL1 >> 16) & 3 ))
-n=$(( (PLL1 >> 8) & 31 ))
-k=$(( (PLL1 >> 4) & 3 ))
-m=$(( PLL1 & 3 ))
+p1=$((PLL1_HEX))
+en=$(( (p1 >> 31) & 1 ))
+n=$((  (p1 >>  8) & 0x1f ))
+k=$(( ((p1 >>  4) & 0x3) + 1 ))
+m=$(( ((p1 >>  0) & 0x3) + 1 ))
+p_exp=$(( (p1 >> 16) & 0x3 ))
+p=$(( 1 << p_exp ))
+[ "$n" -eq 0 ] && pll1=24 || pll1=$(( 24 * n * k / (m * p) ))
 
-# Fout = 24 MHz * N * (K+1) / ((M+1) * 2^P)
-pll=$(( 24 * n * (k + 1) / ( (m + 1) * (1 << p) ) ))
-echo
-echo "  PLL1: enable=$en  N=$n  K=$k  M=$m  P=$p"
-echo "  PLL1 = 24 * $n * $((k+1)) / ($((m+1)) * $((1<<p))) = ${pll} MHz"
+dv=$((DIV_HEX))
+src=$(( (dv >> 16) & 0x3 ))
+axi_div=$(( ((dv >> 0) & 0x3) + 1 ))
+ahb_exp=$(( (dv >> 4) & 0x3 ))
+ahb_div=$(( 1 << ahb_exp ))
+apb0_exp=$(( (dv >> 8) & 0x3 ))
+[ "$apb0_exp" -eq 0 ] && apb0_div=2 || apb0_div=$(( 1 << apb0_exp ))
 
-src=$(( (CFG >> 16) & 3 ))
-axi=$(( (CFG & 3) + 1 ))
-ahb=$(( ((CFG >> 4) & 3) + 1 ))
-apb0=$(( ((CFG >> 8) & 3) + 1 ))
-case $src in
-    0) sname="LOSC 32k"; cpu=0 ;;
-    1) sname="OSC24M";   cpu=24 ;;
-    2) sname="PLL1";     cpu=$pll ;;
-    3) sname="PLL6/Periph"; cpu=$pll ;;
+case "$src" in
+    0) cpu_khz=32     ; src_name="LOSC 32kHz" ;;
+    1) cpu_khz=24000  ; src_name="HOSC 24MHz" ;;
+    2) cpu_khz=$((pll1 * 1000)); src_name="PLL1" ;;
+    3) cpu_khz=200000 ; src_name="200MHz" ;;
 esac
-echo
-echo "  источник CPU clk = $src ($sname)"
-echo "  CPU = ${cpu} MHz,  AXI = $(( cpu / axi )) MHz (div $axi),"
-echo "        AHB = $(( cpu / axi / ahb )) MHz (div $ahb),"
-echo "        APB0 = $(( cpu / axi / ahb / apb0 )) MHz (div $apb0)"
-echo
-echo "=== что говорит ядро ==="
-CF=/sys/devices/system/cpu/cpu0/cpufreq
-if [ -d "$CF" ]; then
-    echo "  scaling_cur_freq = $(cat $CF/scaling_cur_freq 2>/dev/null) kHz"
-    echo "  governor         = $(cat $CF/scaling_governor 2>/dev/null)"
-else
-    echo "  cpufreq sysfs нет -> ядро частотой не управляет, остаётся то, что выставил SPL"
-fi
-echo "  (SPL печатает свою частоту в строке 'CPU: ...Hz, AXI/AHB/APB: ...')"
-echo
-echo "=== остальные PLL ==="
-printf '  PLL5 DDR   (0x20) = %s\n' "$(rd32 0x01c20020)"
-printf '  PLL6 Periph(0x28) = %s\n' "$(rd32 0x01c20028)"
-printf '  OSC24M cfg (0x50) = %s\n' "$(rd32 0x01c20050)"
-printf '  APB1 div   (0x58) = %s\n' "$(rd32 0x01c20058)"
-printf '  AXI gate   (0x5c) = %s\n' "$(rd32 0x01c2005c)"
-printf '  AHB gate0  (0x60) = %s\n' "$(rd32 0x01c20060)"
-printf '  AHB gate1  (0x64) = %s\n' "$(rd32 0x01c20064)"
-printf '  APB0 gate  (0x68) = %s\n' "$(rd32 0x01c20068)"
-printf '  APB1 gate  (0x6c) = %s\n' "$(rd32 0x01c2006c)"
-printf '  SD0 clk    (0x88) = %s\n' "$(rd32 0x01c20088)"
-printf '  DRAM gate  (0x100)= %s\n' "$(rd32 0x01c20100)"
+axi_khz=$(( cpu_khz / axi_div ))
+ahb_khz=$(( axi_khz / ahb_div ))
+apb0_khz=$(( ahb_khz / apb0_div ))
+
+p5=$((PLL5_HEX))
+p5_n=$(( (p5 >> 8) & 0x1f ))
+p5_k=$(( ((p5 >> 4) & 0x3) + 1 ))
+p5_m=$(( ((p5 >> 0) & 0x3) + 1 ))
+p5_p=$(( 1 << ((p5 >> 16) & 0x3) ))
+dram_mhz=$(( 24 * p5_n * p5_k / p5_m ))
+pll5p_mhz=$(( 24 * p5_n * p5_k / p5_p ))
+
+p6=$((PLL6_HEX))
+p6_n=$(( (p6 >> 8) & 0x1f ))
+p6_k=$(( ((p6 >> 4) & 0x3) + 1 ))
+pll6_sata=$(( 24 * p6_n * p6_k / 6 ))
+pll6_other=$(( 24 * p6_n * p6_k / 2 ))
+
+a1=$((APB1_HEX))
+a1_src=$(( (a1 >> 24) & 0x3 ))
+a1_p=$(( 1 << ((a1 >> 16) & 0x3) ))
+a1_m=$(( (a1 & 0x1f) + 1 ))
+case "$a1_src" in
+    0) a1_in=24000 ;;
+    1) a1_in=$((pll6_other * 1000)) ;;
+    2) a1_in=32 ;;
+    *) a1_in=0 ;;
+esac
+apb1_khz=$(( a1_in / (a1_p * a1_m) ))
+
+echo "=== Частоты Allwinner A10 из регистров CCU (0x01c20000) ==="
+printf "  PLL1_CFG   = %-10s  EN=%d N=%d K=%d M=%d P=%d  -> PLL1 = %d MHz\n" \
+    "$PLL1_HEX" "$en" "$n" "$k" "$m" "$p" "$pll1"
+printf "  CPU_AHB    = %-10s  SRC=%s\n" "$DIV_HEX" "$src_name"
+printf "    CPU  = %7d kHz   AXI  = %7d kHz (/ %d)\n" "$cpu_khz" "$axi_khz" "$axi_div"
+printf "    AHB  = %7d kHz (/ %d)   APB0 = %7d kHz (/ %d)\n" "$ahb_khz" "$ahb_div" "$apb0_khz" "$apb0_div"
+printf "  APB1 (UART/I2C) = %d kHz  (reg %s, src=%d, /(%d*%d))\n" \
+    "$apb1_khz" "$APB1_HEX" "$a1_src" "$a1_p" "$a1_m"
+printf "  PLL5_CFG   = %-10s  N=%d K=%d M=%d P=%d -> DDR clk = %d MHz (DDR3-%d), PLL5P = %d MHz\n" \
+    "$PLL5_HEX" "$p5_n" "$p5_k" "$p5_m" "$p5_p" "$dram_mhz" "$((dram_mhz * 2))" "$pll5p_mhz"
+printf "  PLL6_CFG   = %-10s  N=%d K=%d -> PLL6(periph)=%d MHz, SATA=%d MHz\n" \
+    "$PLL6_HEX" "$p6_n" "$p6_k" "$pll6_other" "$pll6_sata"
+printf "  MMC0_CLK   = %s\n" "$MMC0_HEX"

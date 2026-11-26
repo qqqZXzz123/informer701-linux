@@ -1,14 +1,13 @@
 # Лицензии и происхождение компонентов
 
-Публичный набор состоит из собственных материалов проекта и сторонних
-компонентов. Ниже — что откуда и на каких условиях.
+Набор состоит из собственных материалов проекта и сторонних компонентов с
+открытыми и дистрибутивными лицензиями.
 
 ## Собственные материалы (MIT)
 
-Скрипты сборки (`scripts/`), утилиты платы (`rootfs-files/`: `wifi`, `pkg`,
-`usbnet`, `accel`, `pmic*`, `bootnext`, `savelog`, `diag`, …), device tree
-(`dts/`), конфиги (`kernel/`, `u-boot/`) и документы распространяются на
-условиях лицензии MIT:
+Скрипты сборки (`scripts/`), бортовые утилиты и юниты `systemd` (`rootfs-files/`),
+исходный код `src/devmem2.c`, файлы Device Tree (`dts/`), конфигурации (`kernel/`,
+`u-boot/`) и документация распространяются на условиях лицензии MIT:
 
 > Copyright (c) 2026 проект «Linux для Informer 701»
 >
@@ -21,52 +20,28 @@
 
 ## Ядро Linux — GPL-2.0
 
-`prebuilt/zImage` и `prebuilt/modules-*.tar.xz` собраны из ядра
-**linux-6.6** (kernel.org). В соответствии с GPL-2.0 вместе с бинарными
-файлами в наборе лежат все материалы, необходимые для пересборки:
-`kernel/kernel.config-b021` (полный конфиг), `dts/` (изменённый и добавленный
-device tree), `kernel/build.sh` и `kernel/prepare.sh` (рецепт сборки с
-перечнем правок `scripts/config`). Исходники ядра берутся с kernel.org:
-`https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.6.tar.xz`.
+`prebuilt/zImage` и `prebuilt/modules-6.6.0-b021.tar.xz` собраны из ядра
+**Linux 6.6** (`kernel.org`). Все материалы для полной пересборки находятся в
+репозитории: `kernel/kernel.config-b021`, `dts/`, `kernel/build.sh` и
+`scripts/build-all.sh`.
 
 ## U-Boot — GPL-2.0
 
-`prebuilt/u-boot-sunxi-with-spl.bin` собран из U-Boot 2024.10 (denx.de) с
-конфигом `u-boot/informer701_defconfig` (конфиг включён в набор).
+`prebuilt/u-boot-sunxi-with-spl.bin` собран из **U-Boot 2024.10** (`denx.de`) с
+конфигурацией `u-boot/informer701_defconfig`.
 
-## Корневая система — Alpine Linux 3.20 (armv7)
+## Корневая система — Debian 12 (Bookworm) `armhf`
 
-Основа корня — официальный `alpine-minirootfs-3.20.9-armv7.tar.gz` (лицензии
-компонентов Alpine: преимущественно BSD/GPL/MIT, см. репозиторий Alpine).
-Пакеты в `pkgs/` — официальные `.apk` из репозиториев Alpine v3.20
-(main/community); их лицензии и контрольные суммы описаны в самих пакетах и в
-метаданных репозитория. Утилита-обёртка `pkg` — собственная (MIT).
+Корневая файловая система формируется при сборке из официального репозитория
+**Debian GNU/Linux 12 (Bookworm)** для архитектуры `armhf` с помощью
+`debootstrap`. Все установленные пакеты содержат файлы лицензий в
+`/usr/share/doc/<пакет>/copyright` внутри собранного образа в соответствии с
+правилами Debian Free Software Guidelines (DFSG).
 
-## Прошивки WiFi — linux-firmware
+## Прошивки Wi-Fi — `linux-firmware` и `wireless-regdb`
 
-Файлы в `firmware/` взяты из проекта linux-firmware
-(`https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git`)
-и распространяются на условиях лицензий соответствующих вендоров (в основном
-разрешающих Redistribution в бинарном виде вместе с драйвером); тексты лицензий
-лежат в корне репозитория linux-firmware. Состав выборки — только прошивки под
-драйверы, включённые в это ядро.
-
-## regulatory.db — ISC, подпись sforshee
-
-`firmware/regulatory.db` + `regulatory.db.p7s` — выпуск wireless-regdb
-**2023.09.01**, последний, подписанный ключом `CN=sforshee`: ядро 6.6 проверяет
-подпись только этим ключом (`net/wireless/certs/sforshee.hex`,
-`CONFIG_CFG80211_REQUIRE_SIGNED_REGDB=y`), а более свежие выпуски подписаны
-другим ключом и ядром отвергаются. Открытый ключ для проверки подписи лежит в
-`certs/sforshee.x509.pem`; процедура проверки — в `docs/regulatory-db.md`.
-
-## Прочее
-
-* Схема платы и расположение тестпоинтов — документация производителя планшета;
-  в набор не включена, пины приведены текстом в `HARDWARE.md`.
-* QEMU, busybox и прочие инструменты, используемые при проверках, — сторонние
-  проекты с собственными лицензиями; в образ они не входят (кроме busybox из
-  состава Alpine minirootfs).
-
-Проект не связан с производителем планшета Informer 701 и не является
-официальной прошивкой.
+* Файлы в `firmware/` взяты из дерева `linux-firmware` и распространяются на
+  условиях соответствующих вендорских лицензий на бинарное распространение.
+* `firmware/regulatory.db` и `firmware/regulatory.db.p7s` — выпуск
+  `wireless-regdb` **2023.09.01** (лицензия ISC), подписанный ключом
+  `CN=sforshee` (`certs/sforshee.x509.pem`), совместимым с ядром Linux 6.6.

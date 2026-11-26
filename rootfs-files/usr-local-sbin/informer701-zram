@@ -1,0 +1,85 @@
+#!/bin/bash
+# informer701-zram - compressed swap in RAM for Allwinner A10 (512 MiB DDR3)
+set -uo pipefail
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH LC_NUMERIC=C
+
+CONF=/etc/default/zramswap
+PERCENT=50
+ALGO=lz4
+PRIORITY=100
+
+if [ -f "$CONF" ]; then
+    # shellcheck disable=SC1090
+    . "$CONF" 2>/dev/null || true
+fi
+
+do_start() {
+    if grep -q '^/dev/zram0 ' /proc/swaps 2>/dev/null; then
+        echo "[zram] /dev/zram0 уже активен"
+        return 0
+    fi
+
+    modprobe -q lz4 2>/dev/null || true
+    modprobe -q lzo-rle 2>/dev/null || true
+    modprobe -q lzo 2>/dev/null || true
+    modprobe -q zsmalloc 2>/dev/null || true
+    modprobe zram num_devices=1 || {
+        echo "[zram] ОШИБКА: не удалось загрузить модуль zram" >&2
+        return 1
+    }
+
+    # Ждём появления /dev/zram0 (udev/devtmpfs)
+    for _ in 1 2 3 4 5; do
+        [ -b /dev/zram0 ] && break
+        sleep 0.2
+    done
+    [ -b /dev/zram0 ] || {
+        echo "[zram] ОШИБКА: устройство /dev/zram0 не появилось" >&2
+        return 1
+    }
+
+    # Сброс, если устройство уже настраивалось без swapon
+    echo 1 > /sys/block/zram0/reset 2>/dev/null || true
+
+    for a in "$ALGO" lz4 lzo-rle lzo; do
+        if echo "$a" > /sys/block/zram0/comp_algorithm 2>/dev/null; then
+            ALGO="$a"
+            break
+        fi
+    done
+
+    mem_kb=$(awk '/^MemTotal:/ {print $2; exit}' /proc/meminfo)
+    [ -n "${mem_kb:-}" ] || mem_kb=524288
+    size_bytes=$(( mem_kb * 1024 * PERCENT / 100 ))
+    # Выравниваем по 4 КиБ странице
+    size_bytes=$(( (size_bytes / 4096) * 4096 ))
+
+    echo "$size_bytes" > /sys/block/zram0/disksize
+    mkswap -L zram0 /dev/zram0 >/dev/null
+    swapon -p "$PRIORITY" /dev/zram0
+    echo "[zram] включён /dev/zram0: $((size_bytes / 1048576)) МиБ, алгоритм $ALGO, приоритет $PRIORITY"
+}
+
+do_stop() {
+    if grep -q '^/dev/zram0 ' /proc/swaps 2>/dev/null; then
+        swapoff /dev/zram0 || true
+    fi
+    [ -w /sys/block/zram0/reset ] && echo 1 > /sys/block/zram0/reset 2>/dev/null || true
+    echo "[zram] /dev/zram0 отключён"
+}
+
+do_status() {
+    if command -v zramctl >/dev/null 2>&1; then
+        zramctl
+    fi
+    cat /proc/swaps
+}
+
+case "${1:-start}" in
+    start)  do_start ;;
+    stop)   do_stop ;;
+    status) do_status ;;
+    *)      echo "Использование: $0 {start|stop|status}" >&2; exit 2 ;;
+esac

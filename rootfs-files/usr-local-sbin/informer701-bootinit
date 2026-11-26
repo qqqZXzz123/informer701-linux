@@ -1,0 +1,33 @@
+#!/bin/bash
+# /usr/local/sbin/informer701-bootinit
+# Обрабатывает метку одноразовой загрузки /boot/bootonce (от bootnext):
+# строка 1 - пункт, в который загрузились, строка 2 - прежний default, куда вернуться.
+set -euo pipefail
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+MP=/boot
+CONF="$MP/extlinux/extlinux.conf"
+MARK="$MP/bootonce"
+
+if mountpoint -q "$MP" 2>/dev/null || mount -t vfat /dev/mmcblk0p1 "$MP" 2>/dev/null; then
+    if [ -f "$MARK" ] && [ -w "$CONF" ]; then
+        TARGET=$(sed -n 1p "$MARK" 2>/dev/null || true)
+        PREV=$(sed -n 2p "$MARK" 2>/dev/null || true)
+        FACTORY=$(tr -cd 'A-Za-z0-9_-' < /etc/boot-default 2>/dev/null || true)
+        [ -n "$PREV" ] || PREV="${FACTORY:-lowopp}"
+        sed -i "s|^[[:space:]]*default[[:space:]].*|default $PREV|" "$CONF"
+        rm -f "$MARK"
+        sync
+        echo "[bootinit] bootonce ($TARGET) отработан: возвращён default -> $PREV в $CONF"
+    fi
+fi
+
+# Опция ядра eth=1: если подключён USB-Ethernet (eth0), запросить DHCP
+if grep -qw 'eth=1' /proc/cmdline 2>/dev/null && [ -d /sys/class/net/eth0 ]; then
+    ip link set eth0 up 2>/dev/null || true
+    dhclient -1 -nw -lf /run/dhclient-eth0.leases -pf /run/dhclient-eth0.pid eth0 2>/dev/null || true
+fi
+
+exit 0

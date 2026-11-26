@@ -1,0 +1,15 @@
+[Unit]
+Description=Informer 701 Compressed RAM Swap (zram0, 512 MiB DDR3)
+DefaultDependencies=no
+After=systemd-modules-load.service local-fs-pre.target
+Before=swap.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/informer701-zram start
+ExecStop=/usr/local/sbin/informer701-zram stop
+
+[Install]
+WantedBy=swap.target multi-user.target

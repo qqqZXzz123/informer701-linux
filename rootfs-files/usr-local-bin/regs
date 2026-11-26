@@ -1,99 +1,47 @@
-#!/bin/sh
-# regs - дамп ключевых регистров A10 через devmem2 (CCU, UART0, MMC0)
-rd32() { devmem2 "$1" 2>/dev/null | awk '/^Read at address/ {print $NF}'; }
-line() { printf '  %-12s %-22s = %s\n' "$1" "$2" "$(rd32 $1)"; }
+#!/bin/bash
+# regs - сырой дамп ключевых регистров Allwinner A10 (CCU, PIO, UART0, TWI0, MMC0, DRAM, WDT)
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
-echo "=== CCU  0x01c20000 ==="
-line 0x01c20000 "PLL1 (CPU)"
-line 0x01c20004 "PLL1 tuning"
-line 0x01c20020 "PLL5 (DDR)"
-line 0x01c20028 "PLL6 (Periph)"
-line 0x01c20050 "OSC24M cfg"
-line 0x01c20054 "CPU/AXI/AHB/APB0"
-line 0x01c20058 "APB1 div"
-line 0x01c2005c "AXI gate"
-line 0x01c20060 "AHB gate0"
-line 0x01c20064 "AHB gate1"
-line 0x01c20068 "APB0 gate"
-line 0x01c2006c "APB1 gate"
-line 0x01c20088 "SD0 clk cfg"
-line 0x01c20100 "DRAM clk gate"
+rd() {
+    local v
+    v=$(devmem2 "$1" w 2>/dev/null | awk '/Read at address/ {print $NF}')
+    printf '  %-12s %-28s = %s\n' "$1" "$2" "${v:-ERR}"
+}
 
-echo "  (гейты APB0/APB1/AHB меняются на лету: драйверы i2c/mmc/spi выключают"
-echo "   свои часы в простое через runtime PM, поэтому 0 в бите гейта - норма)"
-echo
-echo "=== UART0  0x01c28000  (PB22 TX / PB23 RX = TP20/TP21) ==="
-line 0x01c28004 "IER"
-line 0x01c28008 "IIR/FIFO"
-line 0x01c2800c "LCR (0x03 = 8N1)"
-line 0x01c28010 "MCR"
-line 0x01c28014 "LSR (bit5/6 = THR пуст)"
-line 0x01c28018 "MSR"
-line 0x01c2801c "SCR"
-echo "  (0x00 = RBR намеренно не читается, чтобы не потерять входящий байт)"
+echo "=== CCU (0x01c20000) ==="
+rd 0x01c20000 "PLL1_CFG (CPU)"
+rd 0x01c20004 "PLL1_TUN"
+rd 0x01c20020 "PLL5_CFG (DDR)"
+rd 0x01c20028 "PLL6_CFG (PERIPH)"
+rd 0x01c20054 "CPU_AHB_APB0_CFG"
+rd 0x01c20058 "APB1_CLK_DIV"
+rd 0x01c20060 "AHB_GATING0"
+rd 0x01c20064 "AHB_GATING1"
+rd 0x01c20068 "APB0_GATING"
+rd 0x01c2006c "APB1_GATING (UART/TWI)"
+rd 0x01c20088 "MMC0_CLK"
+rd 0x01c20090 "MMC2_CLK"
 
-echo
-echo "=== MMC0 (SD-карта)  0x01c0f000 ==="
-# Хост mmc уходит в runtime-suspend через 50 мс простоя, а вместе с ним
-# выключается его AHB-гейт: при выключенном гейте окно регистров читается
-# как нули. Это НЕ поломка. (Фоновое чтение dd не помогает: повторные чтения
-# одних и тех же секторов берутся из кэша, обмена с картой нет.)
-# Правильный способ - на время дампа запретить runtime-suspend: power/control=on.
-MMCDEV=$(readlink -f /sys/class/mmc_host/mmc0 2>/dev/null)
-if [ -n "$MMCDEV" ] && [ -w "$MMCDEV/power/control" ]; then
-    echo "  устройство: $MMCDEV"
-    echo "  runtime_status до : $(cat $MMCDEV/power/runtime_status 2>/dev/null)"
-    echo on > "$MMCDEV/power/control" 2>/dev/null
-    sleep 1
-    echo "  runtime_status после: $(cat $MMCDEV/power/runtime_status 2>/dev/null) (control=$(cat $MMCDEV/power/control 2>/dev/null))"
-fi
-if [ -r /sys/kernel/debug/mmc0/ios ]; then
-    echo "--- /sys/kernel/debug/mmc0/ios (достоверно, без чтения регистров) ---"
-    sed -n '1,10p' /sys/kernel/debug/mmc0/ios
-fi
-for h in /sys/class/mmc_host/*; do
-    [ -e "$h" ] || continue
-    echo "--- $(basename $h) -> $(readlink -f $h 2>/dev/null)"
-    [ -r "$h/uevent" ] && echo "    uevent: $(tr '\n' ' ' < $h/uevent)"
-done
-line 0x01c0f000 "GCTRL (bit0 = FIFO reset)"
-line 0x01c0f004 "CLKCR (делитель, bit16 = вкл)"
-line 0x01c0f008 "TMOUT"
-line 0x01c0f00c "CTYPE (ширина шины)"
-line 0x01c0f010 "BLKSIZ"
-line 0x01c0f014 "BYTCNT"
-line 0x01c0f018 "CMD"
-line 0x01c0f01c "ARG"
-line 0x01c0f020 "RESP0"
-line 0x01c0f024 "RESP1"
-line 0x01c0f030 "IMASK"
-line 0x01c0f034 "MINT (маскируемые прерывания)"
-line 0x01c0f038 "RINT (сырые прерывания)"
-line 0x01c0f03c "STATUS"
-line 0x01c0f040 "FTRGLEVEL"
-line 0x01c0f044 "FUNCSEL"
-if [ -n "$MMCDEV" ] && [ -w "$MMCDEV/power/control" ]; then
-    echo auto > "$MMCDEV/power/control" 2>/dev/null
-    echo "  (runtime PM возвращён в auto)"
-fi
+echo "=== PIO PB (0x01c20824) - PB0/1=I2C0, PB22/23=UART0 ==="
+rd 0x01c20824 "PB_CFG0 (PB0..PB7)"
+rd 0x01c2082c "PB_CFG2 (PB16..PB23)"
+rd 0x01c20834 "PB_DATA"
+rd 0x01c20840 "PB_PULL0"
+rd 0x01c20844 "PB_PULL1"
 
-echo
-echo "=== TWI0 (I2C к AXP209)  0x01c2ac00 ==="
-line 0x01c2ac00 "ADDR"
-line 0x01c2ac04 "XADDR (адрес ведомого)"
-line 0x01c2ac08 "DATA"
-line 0x01c2ac0c "CNTR (bit6 EN, bit3 INT, bit5 STP)"
-line 0x01c2ac10 "STAT (0xf8 reset, 0x08 idle)"
-line 0x01c2ac14 "CC (делитель частоты)"
-line 0x01c2ac18 "SRST"
-line 0x01c2ac1c "EFR"
-echo "  STAT после удачной передачи = 0x58 (данные приняты, ACK получен)"
+echo "=== TWI0 / I2C0 (0x01c2ac00) ==="
+rd 0x01c2ac0c "TWI0_CNTR"
+rd 0x01c2ac10 "TWI0_STAT"
+rd 0x01c2ac14 "TWI0_CCR (clock)"
+rd 0x01c2ac1c "TWI0_EFR"
+rd 0x01c2ac20 "TWI0_LCR (line state)"
 
-echo
-echo "=== TWI1  0x01c2b000 / TWI2  0x01c2b400 (не используются) ==="
-line 0x01c2b000 "TWI1 ADDR"
-line 0x01c2b00c "TWI1 CNTR"
-line 0x01c2b010 "TWI1 STAT"
-line 0x01c2b400 "TWI2 ADDR"
-line 0x01c2b40c "TWI2 CNTR"
-line 0x01c2b410 "TWI2 STAT"
+echo "=== TIMER / WATCHDOG (0x01c20c00) ==="
+rd 0x01c20c90 "WDOG_CTRL"
+rd 0x01c20c94 "WDOG_MODE"
+
+echo "=== SID / CHIP VERSION ==="
+rd 0x01c23800 "SID_KEY0"
+rd 0x01c23804 "SID_KEY1"
+rd 0x01c00024 "SRAM_VER_REG"

@@ -1,203 +1,149 @@
-#!/bin/sh
-# wdt - аппаратный watchdog (sunxi_wdt, /dev/watchdog)
+#!/bin/bash
+# wdt - управление аппаратным watchdog Allwinner A10 (sunxi_wdt, /dev/watchdog)
 #
-#   wdt              статус
-#   wdt on [T] [P]   включить: таймаут T секунд (1..16, по умолчанию 16),
-#                    фидер пингует устройство каждые P секунд (по умолчанию T/2)
-#   wdt off          выключить штатно (запись 'V' перед закрытием)
+# В Debian 12 аппаратный сторожевой таймер курирует непосредственно PID 1
+# (systemd) через RuntimeWatchdogSec в /etc/systemd/system.conf.d/10-watchdog.conf:
+#   * по умолчанию включён с таймаутом 16 с (максимум для sunxi_wdt), пинг ~8 с;
+#   * если ядро или systemd зависнут - SoC аппаратно перезагрузит плату.
 #
-# ЗАЧЕМ. С b015 узел watchdog@1c20c90 включён во всех DTB, поэтому драйвер
-# sunxi_wdt делает probe и регистрирует обработчик перезапуска SoC - именно
-# благодаря этому `reboot` и `bootnext` больше не требуют кнопки reset (проверено
-# на плате: reboot -> "Restarting system" -> SPL). Но сам таймер при probe НЕ
-# стартует: он запускается только по open("/dev/watchdog"). Значит при зависании
-# платы её никто сам не перезапустит. `wdt on` включает как раз это: зависла
-# система (или умер фидер) - плата уйдёт в перезагрузку через T секунд и
-# поднимется пунктом по умолчанию.
-#
-# ПОЧЕМУ ЭТО БЕЗОПАСНО. Ядро watchdog при НЕШТАТНОМ закрытии устройства (без
-# символа 'V') таймер не останавливает, а печатает "watchdog did not stop!".
-# Поэтому гибель фидера означает перезагрузку, а не "watchdog молча выключился".
-# Отключать нужно только через `wdt off` (фидер по SIGTERM сам пишет 'V').
-#
-# sunxi_wdt поддерживает таймауты 1 2 3 4 5 6 8 10 12 14 16 секунд.
-# nowayout=0 (видно в dmesg: "Watchdog enabled (timeout=16 sec, nowayout=0)"),
-# поэтому `wdt off` действительно останавливает таймер.
-#
-# Фидер запускается в режиме -F (foreground) и уходит в фон силами шелла, а его
-# PID пишется в /run/wdt.pid. Так мы точно знаем, кого останавливать, и не
-# зависим от pidof/перебора /proc. Интерактивный шелл busybox уводит фоновое
-# задание в свою группу процессов, поэтому обрыв UART-консоли фидер не убивает.
+# Команды:
+#   wdt              показать состояние /dev/watchdog, регистра WDOG_MODE и systemd
+#   wdt on [T]       включить/изменить таймаут T секунд (1..16, по умолчанию 16)
+#   wdt off          штатно отключить сторожевой таймер (RuntimeWatchdogSec=0)
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 DEV=/dev/watchdog
-FLAG=/etc/wdt-enabled          # постоянный (на ext4): автозапуск после reboot
-PIDF=/run/wdt.pid              # временный (tmpfs): PID текущего фидера
 SYS=/sys/class/watchdog/watchdog0
-SELF=wdt
+CONF_DIR=/etc/systemd/system.conf.d
+CONF="$CONF_DIR/10-watchdog.conf"
 
-is_num() { case "$1" in ''|*[!0-9]*) return 1;; *) return 0;; esac; }
+is_num() { case "${1:-}" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }
 
-# Жив ли фидер. kill -0 проверяет наличие процесса, но PID остаётся валидным и
-# для зомби (процесс уже мёртв, но родитель его не собрал). Поэтому состояние
-# дополнительно сверяем с /proc/<pid>/stat: 'Z' означает "мёртв".
-# Поле state берём после последней ')' - в имени процесса могут быть пробелы.
-# sunxi_wdt умеет только эти таймауты (таблица wdt_timeout_map в драйвере).
-# Неподдерживаемое значение округляем ВВЕРХ до ближайшего - так же поступает
-# драйвер (timeout++), но у нас это видно сразу в сообщении, а не только в sysfs.
 snap_timeout() {
+    local _t
     for _t in 1 2 3 4 5 6 8 10 12 14 16; do
         [ "$1" -le "$_t" ] && { echo "$_t"; return 0; }
     done
     echo 16
 }
 
-feeder_alive() {
-    kill -0 "$1" 2>/dev/null || return 1
-    if [ -r "/proc/$1/stat" ]; then
-        _st=$(sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -d' ' -f1)
-        [ "$_st" = Z ] && return 1
-    fi
-    return 0
-}
+sys_val() { [ -r "$SYS/$1" ] && cat "$SYS/$1" 2>/dev/null || true; }
 
-feeder_pid() {
-    _p=$(cat "$PIDF" 2>/dev/null)
-    case "$_p" in ''|*[!0-9]*) echo ""; return 1 ;; esac
-    if feeder_alive "$_p"; then echo "$_p"; return 0; fi
-    echo ""; return 1
+decode_hw_wdt() {
+    command -v devmem2 >/dev/null 2>&1 || return 1
+    local hex
+    hex=$(devmem2 0x01c20c94 w 2>/dev/null | awk '/Read at address/{print $NF}')
+    [ -n "$hex" ] || return 1
+    local v=$((hex))
+    local en=$(( v & 1 ))
+    local rst=$(( (v >> 1) & 1 ))
+    local idx=$(( (v >> 3) & 0x0f ))
+    local sec="?"
+    case "$idx" in
+        0) sec="0.5" ;; 1) sec="1" ;;  2) sec="2" ;;  3) sec="3" ;;
+        4) sec="4" ;;   5) sec="5" ;;  6) sec="6" ;;  7) sec="8" ;;
+        8) sec="10" ;;  9) sec="12" ;; 10) sec="14" ;; 11) sec="16" ;;
+    esac
+    echo "WDOG_MODE=$hex (EN=$en RST=$rst интервал=${sec}с)"
 }
-
-sys_val() { [ -r "$SYS/$1" ] && cat "$SYS/$1" 2>/dev/null; }
 
 do_status() {
     if [ ! -e "$DEV" ]; then
         echo "watchdog: нет $DEV - узел выключен в DTB или драйвер не сделал probe"
         return 1
     fi
-    echo "=== watchdog ==="
+    echo "=== аппаратный watchdog (systemd + sunxi_wdt) ==="
     echo "  устройство : $DEV"
-    ID=$(sys_val identity); [ -n "$ID" ] && echo "  драйвер    : $ID"
-    TO=$(sys_val timeout);  [ -n "$TO" ] && echo "  таймаут    : $TO с"
-    ST=$(sys_val state);    [ -n "$ST" ] && echo "  состояние  : $ST  (active = таймер запущен)"
-    P=$(feeder_pid)
-    if [ -n "$P" ]; then
-        echo "  фидер      : запущен (pid $P, файл $PIDF)"
-    else
-        echo "  фидер      : НЕ запущен (таймер не стартует, плата сама не перезагрузится)"
+    local id to st tl rt hw pid1_open="нет"
+    id=$(sys_val identity); [ -n "$id" ] && echo "  драйвер    : $id"
+    to=$(sys_val timeout);  [ -n "$to" ] && echo "  таймаут HW : ${to} с"
+    tl=$(sys_val timeleft); [ -n "$tl" ] && echo "  осталось   : ${tl} с"
+    st=$(sys_val state);    [ -n "$st" ] && echo "  состояние  : $st"
+    if readlink /proc/1/fd/* 2>/dev/null | grep -q '^/dev/watchdog'; then
+        pid1_open="да (PID 1 держит $DEV открытым)"
     fi
-    if [ -f "$FLAG" ]; then
-        echo "  автозапуск : ВКЛЮЧЁН - $(tr '\n' ' ' < "$FLAG")"
-    else
-        echo "  автозапуск : выключен ($FLAG нет)"
+    echo "  открыт PID1: $pid1_open"
+    hw=$(decode_hw_wdt 2>/dev/null || true)
+    [ -n "$hw" ] && echo "  регистр HW : $hw"
+    if [ -d /run/systemd/system ]; then
+        rt=$(systemctl show --property=RuntimeWatchdogUSec --value 2>/dev/null || true)
+        echo "  systemd    : RuntimeWatchdogUSec=${rt:-0}"
+    fi
+    if [ -f "$CONF" ]; then
+        echo "  конфиг     : $CONF ($(grep -E '^RuntimeWatchdogSec=' "$CONF" 2>/dev/null || echo 'нет'))"
     fi
     return 0
 }
 
-start_feeder() {
-    # -F: фидер остаётся в foreground, в фон его уводим мы и запоминаем PID
-    watchdog -F -T "$1" -t "$2" "$DEV" >/dev/null 2>&1 &
-    echo "$!" > "$PIDF"
-    sleep 1
-}
-
 do_on() {
-    T=${1:-16}
-    P=${2:-}
-    if ! is_num "$T"; then
-        echo "wdt: таймаут должен быть целым числом секунд (1..16)"; exit 2
+    [ "$(id -u)" -eq 0 ] || { echo "wdt: нужны права root" >&2; exit 1; }
+    local T="${1:-16}"
+    if ! is_num "$T" || [ "$T" -lt 1 ] || [ "$T" -gt 16 ]; then
+        echo "wdt: sunxi_wdt поддерживает таймаут 1..16 секунд (1 2 3 4 5 6 8 10 12 14 16)" >&2
+        exit 2
     fi
-    if [ "$T" -lt 1 ] || [ "$T" -gt 16 ]; then
-        echo "wdt: sunxi_wdt поддерживает таймаут 1..16 секунд (1 2 3 4 5 6 8 10 12 14 16)"; exit 2
-    fi
+    local T_REAL
     T_REAL=$(snap_timeout "$T")
     if [ "$T_REAL" != "$T" ]; then
-        echo "wdt: $T с драйвер не поддерживает - беру $T_REAL с"
-        T=$T_REAL
+        echo "wdt: $T с округлено до поддерживаемого драйвером шага ${T_REAL} с"
+        T="$T_REAL"
     fi
-    if [ -z "$P" ]; then
-        P=$((T / 2))
-        [ "$P" -ge 1 ] || P=1
-    fi
-    if ! is_num "$P"; then
-        echo "wdt: интервал пинга должен быть целым числом секунд"; exit 2
-    fi
-    if [ "$P" -ge "$T" ]; then
-        echo "wdt: интервал пинга ($P с) должен быть меньше таймаута ($T с)"; exit 2
-    fi
-    if [ "$P" -lt 1 ]; then P=1; fi
-    if [ ! -e "$DEV" ]; then
-        echo "wdt: нет $DEV - watchdog недоступен в этом пункте меню"; exit 1
-    fi
-    OLD=$(feeder_pid)
-    if [ -n "$OLD" ]; then
-        echo "wdt: останавливаю прежний фидер (pid $OLD)"
-        kill "$OLD" 2>/dev/null
-        sleep 1
-        rm -f "$PIDF"
-    fi
-    start_feeder "$T" "$P"
-    NEW=$(feeder_pid)
-    if [ -z "$NEW" ]; then
-        echo "wdt: фидер не запустился - смотрите dmesg и \`wdt\`"
-        rm -f "$PIDF"
-        exit 1
-    fi
-    printf 'WDT_T=%s\nWDT_PING=%s\n' "$T" "$P" > "$FLAG"
+    [ -e "$DEV" ] || { echo "wdt: нет $DEV" >&2; exit 1; }
+
+    mkdir -p "$CONF_DIR"
+    cat > "$CONF" <<EOF
+[Manager]
+RuntimeWatchdogSec=${T}s
+RebootWatchdogSec=16s
+WatchdogDevice=/dev/watchdog
+DefaultTimeoutStartSec=45s
+DefaultTimeoutStopSec=15s
+EOF
     sync
-    echo "=== watchdog включён ==="
-    echo "  таймаут    : $T с  (перезапуск платы, если её не покормить)"
-    echo "  пинг       : каждые $P с"
-    echo "  фидер      : pid $NEW ($PIDF)"
-    ST=$(sys_val state); [ -n "$ST" ] && echo "  состояние  : $ST"
-    echo "  автозапуск : записан в $FLAG - после reboot фидер поднимется сам"
-    echo
-    echo "  Выключить:  wdt off"
-    echo "  Проверить:  wdt"
-    echo "  Внимание: если система зависнет, плата перезагрузится сама через $T с."
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reexec
+        sleep 1
+    fi
+    echo "=== watchdog включён через systemd (таймаут ${T} с) ==="
+    do_status
 }
 
 do_off() {
-    P=$(feeder_pid)
-    if [ -n "$P" ]; then
-        # SIGTERM: фидер пишет 'V' (magic close) и закрывает устройство,
-        # поэтому ядро штатно останавливает таймер.
-        kill "$P" 2>/dev/null
+    [ "$(id -u)" -eq 0 ] || { echo "wdt: нужны права root" >&2; exit 1; }
+    mkdir -p "$CONF_DIR"
+    cat > "$CONF" <<'EOF'
+[Manager]
+RuntimeWatchdogSec=0
+RebootWatchdogSec=16s
+WatchdogDevice=/dev/watchdog
+DefaultTimeoutStartSec=45s
+DefaultTimeoutStopSec=15s
+EOF
+    sync
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reexec
         sleep 1
-        if feeder_alive "$P"; then
-            echo "wdt: фидер (pid $P) не остановился по SIGTERM, пробую SIGKILL"
-            echo "wdt: ВНИМАНИЕ - после SIGKILL таймер останется запущенным,"
-            echo "wdt: плата перезагрузится через несколько секунд (штатная защита)"
-            kill -9 "$P" 2>/dev/null
-            sleep 1
-        else
-            echo "wdt: фидер остановлен штатно (magic close 'V'), таймер выключен"
-        fi
-    else
-        echo "wdt: фидер и так не работал"
     fi
-    rm -f "$PIDF"
-    if [ -f "$FLAG" ]; then
-        rm -f "$FLAG"
-        sync
-        echo "wdt: автозапуск убран ($FLAG удалён)"
-    fi
-    ST=$(sys_val state); [ -n "$ST" ] && echo "wdt: состояние таймера теперь: $ST"
+    echo "=== runtime watchdog отключён ==="
     do_status
 }
 
 usage() {
-    echo "использование: $SELF [on [таймаут_с] [пинг_с] | off]"
-    echo "  $SELF          - статус"
-    echo "  $SELF on       - включить (таймаут 16 с, пинг 8 с) + автозапуск после reboot"
-    echo "  $SELF on 8 4   - таймаут 8 с, пинг 4 с"
-    echo "  $SELF off      - выключить и убрать автозапуск"
+    cat <<EOF
+использование: wdt [status | on [таймаут_1..16] | off]
+  wdt          - показать состояние /dev/watchdog, WDOG_MODE и RuntimeWatchdogSec
+  wdt on [16]  - активировать аппаратный watchdog через systemd (по умолчанию 16 с)
+  wdt off      - штатно отключить RuntimeWatchdogSec
+EOF
     exit 2
 }
 
 case "${1:-status}" in
-    status|"") do_status ;;
-    on)        shift; do_on "$@" ;;
-    off)       do_off ;;
+    status|"")      do_status ;;
+    on)             shift; do_on "$@" ;;
+    off)            do_off ;;
     -h|--help|help) usage ;;
-    *)         echo "wdt: неизвестная команда '$1'"; usage ;;
+    *)              echo "wdt: неизвестная команда '$1'" >&2; usage ;;
 esac

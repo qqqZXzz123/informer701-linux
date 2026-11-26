@@ -1,0 +1,12 @@
+[Unit]
+Description=Informer 701 Boot Initialization & One-Shot Boot Recovery
+After=local-fs.target boot.mount
+Wants=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/informer701-bootinit
+
+[Install]
+WantedBy=multi-user.target

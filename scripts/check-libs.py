@@ -1,35 +1,49 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-check-libs.py - проверка: у каждого ELF-файла в rootfs есть все нужные
-разделяемые библиотеки (DT_NEEDED).
-
-Зачем
------
-Пакеты ставятся в образ распаковкой .apk (apk в контейнере нет), поэтому
-зависимости-подпакеты (liblzma, libxtables, libmnl, libncursesw, ...) легко
-потерять. Файлы при этом на месте, а на плате команда молча не запускается:
-
-    Error loading shared library libxtables.so.12: No such file or directory
-
-Так в b021 (первой версии) оказались нерабочими modprobe (нет liblzma.so.5 из
-xz-libs) и iptables. Проверка вызывается из build-image.sh и валит сборку,
-если чего-то не хватает (обойти: ALLOW_MISSING_LIBS=1).
+check-libs.py - проверка: у каждого ELF-файла в rootfs Debian armhf (glibc)
+есть все нужные разделяемые библиотеки (DT_NEEDED).
 
     python3 scripts/check-libs.py <каталог-rootfs> [--quiet]
 
-Использует свой разбор ELF (readelf/objdump не нужны), поддерживает ELF32/ELF64.
+Использует свой разбор ELF (readelf/objdump не нужны), поддерживает ELF32/ELF64,
+учитывает multiarch-каталоги Debian (/usr/lib/arm-linux-gnueabihf), merged-usr
+и chroot-относительные абсолютные симлинки.
 """
 import os
 import struct
 import sys
 
-LIBDIRS = ("lib", "usr/lib", "usr/local/lib", "lib/arm-linux-gnueabihf")
-# библиотеки, которые даёт ядро/линкер, а не файлы в корне
-VIRTUAL = {"linux-vdso.so.1", "linux-gate.so.1", "ld-linux.so.2",
-           "ld-linux-armhf.so.3", "ld-musl-armv7.so.1", "ld-musl-armhf.so.1"}
+LIBDIRS = (
+    "lib",
+    "usr/lib",
+    "usr/local/lib",
+    "lib/arm-linux-gnueabihf",
+    "usr/lib/arm-linux-gnueabihf",
+)
+# библиотеки, которые даёт ядро/динамический линкер
+VIRTUAL = {
+    "linux-vdso.so.1",
+    "linux-gate.so.1",
+    "ld-linux.so.2",
+    "ld-linux-armhf.so.3",
+}
 
 SHT_DYNAMIC = 6
+
+
+def resolve_in_root(root, path):
+    """Разрешает цепочку симлинков внутри chroot-корня `root` (без выхода в / хоста)."""
+    cur = path
+    for _ in range(32):
+        if not os.path.islink(cur):
+            return cur
+        target = os.readlink(cur)
+        if target.startswith("/"):
+            cur = os.path.normpath(os.path.join(root, target.lstrip("/")))
+        else:
+            cur = os.path.normpath(os.path.join(os.path.dirname(cur), target))
+    return cur
 
 
 def parse_dynamic(path):
@@ -75,7 +89,6 @@ def parse_dynamic(path):
             if dyn is None:
                 return None
             sh_offset, sh_size, sh_link = dyn
-            # строковая таблица .dynstr
             off = sh_link * e_shentsize
             if is64:
                 str_off = struct.unpack_from(le + "Q", shs, off + 0x18)[0]
@@ -114,25 +127,32 @@ def main():
     if not argv:
         print("использование: check-libs.py <rootfs> [--quiet]", file=sys.stderr)
         return 2
-    root = argv[0]
+    root = os.path.abspath(argv[0])
     if not os.path.isdir(root):
         print("нет каталога %s" % root, file=sys.stderr)
         return 2
 
     # 1) какие soname/имена файлов есть в корневой ФС
     have = set(VIRTUAL)
-    libfiles = []
+    libfiles = set()
+    seen_dirs = set()
     for d in LIBDIRS:
-        base = os.path.join(root, d)
-        for dirpath, _dirs, files in os.walk(base):
+        base = resolve_in_root(root, os.path.join(root, d))
+        if not os.path.isdir(base):
+            continue
+        for dirpath, dirs, files in os.walk(base):
+            real_dir = resolve_in_root(root, dirpath)
+            if real_dir in seen_dirs:
+                dirs[:] = []
+                continue
+            seen_dirs.add(real_dir)
             for fn in files:
                 p = os.path.join(dirpath, fn)
-                if os.path.islink(p):
-                    p = os.path.realpath(p)
-                    if not os.path.exists(p):
-                        continue
+                rp = resolve_in_root(root, p)
+                if not os.path.exists(rp):
+                    continue
                 have.add(fn)
-                libfiles.append(p)
+                libfiles.add(rp)
     for p in libfiles:
         r = parse_dynamic(p)
         if r and r[1]:
@@ -146,6 +166,9 @@ def main():
         for fn in files:
             p = os.path.join(dirpath, fn)
             if os.path.islink(p):
+                continue
+            # пропускаем модули ядра (.ko / .ko.xz)
+            if fn.endswith((".ko", ".ko.xz", ".o")):
                 continue
             try:
                 if os.path.getsize(p) < 64:
@@ -178,8 +201,6 @@ def main():
         print("  %-24s нужно: %s%s" % (lib, ", ".join(who[:6]),
                                         " (+%d)" % (len(who) - 6) if len(who) > 6 else ""),
               file=sys.stderr)
-    print("  лечение: python3 scripts/fetch-apks.py <пакет-владелец-библиотеки>"
-          " && пересобрать образ", file=sys.stderr)
     return 1 if os.environ.get("ALLOW_MISSING_LIBS") != "1" else 0
 
 

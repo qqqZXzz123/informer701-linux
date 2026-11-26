@@ -1,22 +1,32 @@
-#!/bin/sh
-# diag - полный снимок состояния платы Informer 701 (Allwinner A10 / N708H6)
-# Вывод можно целиком отправить в лог UART: diag > /tmp/diag.txt
+#!/bin/bash
+# diag - полный снимок состояния платы Informer 701 (Allwinner A10 / Debian 12 armhf)
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH LC_NUMERIC=C
 
 sep() { printf '\n===== %s =====\n' "$1"; }
 
-sep "СИСТЕМА"
+sep "СИСТЕМА (DEBIAN 12 BOOKWORM ARMHF)"
 date
 uname -a
+[ -f /etc/os-release ] && grep -E '^(PRETTY_NAME|VERSION_ID)=' /etc/os-release
 echo "build:      $(cat /etc/build-id 2>/dev/null)"
-echo "model:      $(cat /proc/device-tree/model 2>/dev/null | tr -d '\0')"
-echo "compatible: $(cat /proc/device-tree/compatible 2>/dev/null | tr '\0' ' ')"
+echo "model:      $(tr -d '\0' < /proc/device-tree/model 2>/dev/null)"
+echo "compatible: $(tr '\0' ' ' < /proc/device-tree/compatible 2>/dev/null)"
 echo "cmdline:    $(cat /proc/cmdline)"
-echo "DTB:        $(ls -l /proc/device-tree 2>/dev/null | head -1)"
 head -12 /proc/cpuinfo
-echo "--- память ---"
-head -3 /proc/meminfo
+echo "--- память и zram ---"
+free -h 2>/dev/null || head -5 /proc/meminfo
+cat /proc/swaps 2>/dev/null
+command -v zramctl >/dev/null 2>&1 && zramctl 2>/dev/null || true
 echo "--- uptime/load ---"
 cat /proc/uptime; cat /proc/loadavg
+
+sep "SYSTEMD И WATCHDOG"
+if [ -d /run/systemd/system ]; then
+    echo "state: $(systemctl is-system-running 2>/dev/null || true)"
+    systemctl --failed --no-pager 2>/dev/null || true
+fi
+wdt status 2>/dev/null || true
 
 sep "ЧАСТОТЫ И НАПРЯЖЕНИЯ"
 clk
@@ -26,18 +36,17 @@ if [ -d "$CF" ]; then
     for f in scaling_driver scaling_governor scaling_cur_freq scaling_min_freq \
              scaling_max_freq cpuinfo_cur_freq cpuinfo_min_freq cpuinfo_max_freq \
              scaling_available_frequencies scaling_available_governors; do
-        printf '%-34s %s\n' "$f" "$(cat $CF/$f 2>/dev/null)"
+        printf '%-34s %s\n' "$f" "$(cat "$CF/$f" 2>/dev/null)"
     done
 else
-    echo "нет - cpufreq-dt не зарегистрирован (нет OPP-таблицы, нет cpu-supply,"
-    echo "      PMIC не прозондирован, или стоит initcall_blacklist=cpufreq_dt_platdev_init)"
+    echo "нет - cpufreq-dt не зарегистрирован"
 fi
 echo "--- regulators (sysfs) ---"
 if ls /sys/class/regulator/ >/dev/null 2>&1 && [ -n "$(ls -A /sys/class/regulator 2>/dev/null)" ]; then
     for d in /sys/class/regulator/*; do
-        printf '%-14s %-12s %10s uV  (%s)\n' "$(basename $d)" \
-            "$(cat $d/name 2>/dev/null)" "$(cat $d/microvolts 2>/dev/null)" \
-            "$(cat $d/state 2>/dev/null)"
+        printf '%-14s %-12s %10s uV  (%s)\n' "$(basename "$d")" \
+            "$(cat "$d/name" 2>/dev/null)" "$(cat "$d/microvolts" 2>/dev/null)" \
+            "$(cat "$d/state" 2>/dev/null)"
     done
 else
     echo "нет (PMIC отключён в DTB или не прозондирован)"
@@ -45,27 +54,6 @@ fi
 if [ -r /sys/kernel/debug/regulator/regulator_summary ]; then
     echo "--- regulator_summary (debugfs) ---"
     cat /sys/kernel/debug/regulator/regulator_summary
-fi
-# clk_summary печатает вызванный выше clk - не дублируем, там фильтр
-# подобран так, чтобы pll-core/cpu/axi/ahb/apb0 не вытесняли дети apb1-*
-echo "--- thermal ---"
-TZ=0
-for z in /sys/class/thermal/thermal_zone*; do
-    [ -e "$z" ] || continue
-    TZ=$((TZ + 1))
-    echo "$(basename $z): type=$(cat $z/type 2>/dev/null) temp=$(cat $z/temp 2>/dev/null)"
-done
-[ "$TZ" -eq 0 ] && echo "нет thermal-зон: у A10 в mainline нет температурного датчика - это штатно"
-
-echo "--- срез частоты (sysfs и регистры CCU подряд) ---"
-if [ -d "$CF" ]; then
-    S1=$(cat $CF/scaling_cur_freq 2>/dev/null)
-    HW=$(clk 2>/dev/null | sed -n 's/.*CPU = \([0-9]*\) MHz.*/\1/p' | head -1)
-    S2=$(cat $CF/scaling_cur_freq 2>/dev/null)
-    echo "  sysfs scaling_cur_freq: ${S1:-?} kHz (до) / ${S2:-?} kHz (после)"
-    echo "  PLL1 по регистрам CCU между ними: ${HW:-?} МГц"
-    echo "  (governor schedutil меняет частоту на ходу, поэтому показания в разных"
-    echo "   разделах diag могут различаться - это работа DVFS, а не ошибка)"
 fi
 
 sep "AXP209 (PMIC) НА I2C0"
@@ -93,11 +81,10 @@ dmesg | tail -30
 sep "РЕГИСТРЫ CCU / UART0 / MMC0"
 regs
 
-sep "БЛОЧНЫЕ УСТРОЙСТВА И РАЗДЕЛЫ"
+sep "БЛОЧНЫЕ УСТРОЙСТВА, TMPFS И РАЗДЕЛЫ"
 cat /proc/partitions
-mount | head -20
-df -h 2>/dev/null | head -10
+mount | head -25
+df -h 2>/dev/null | head -15
 
 sep "КОНЕЦ"
-echo "Сохранить в файл:  diag > /tmp/diag.txt"
-echo "Скопировать на boot-раздел (vfat, видно с ПК):  diag > /boot/diag.txt && sync"
+echo "Сохранить отчёт на раздел BOOT (vFAT): savelog"

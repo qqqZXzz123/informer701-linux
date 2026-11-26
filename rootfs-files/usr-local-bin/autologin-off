@@ -1,0 +1,17 @@
+#!/bin/bash
+# autologin-off - вернуть запрос логина/пароля (root / informer701) на ttyS0 (systemd)
+set -euo pipefail
+DROPIN_DIR=/etc/systemd/system/serial-getty@ttyS0.service.d
+mkdir -p "$DROPIN_DIR"
+cat > "$DROPIN_DIR/override.conf" <<'EOF'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --keep-baud 115200,38400,9600 %I $TERM
+Restart=always
+RestartSec=1
+EOF
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload
+    systemctl restart serial-getty@ttyS0.service
+fi
+echo "autologin на ttyS0 выключен, будет запрос логина (root / informer701)."

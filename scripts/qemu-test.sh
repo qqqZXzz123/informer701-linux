@@ -1,91 +1,148 @@
 #!/bin/bash
-# qemu-test.sh - прогон содержимого образа в QEMU (ARM cubieboard) перед выдачей.
+# qemu-test.sh - автоматическая проверка готового образа Debian 12 (Bookworm) armhf
+# в эмуляторе QEMU (qemu-system-arm -M cubieboard, Cortex-A8, 512 МиБ ОЗУ).
 #
-#   BUILD=b021 bash scripts/qemu-test.sh
-#   ROOTFS=/tmp/art-b021/rootfs LOG=/tmp/q.log bash scripts/qemu-test.sh
-#
-# Что делает: берёт ТОТ ЖЕ rootfs, из которого собран образ (по умолчанию
-# /tmp/art-$BUILD/rootfs, его оставляет build-image.sh), кладёт в него /init из
-# scripts/qtest-init.sh, пакует в initramfs и грузит наше ядро + lowopp.dtb.
-# То есть проверяется содержимое образа, а не сборочного хоста.
-#
-# Результат: лог в $LOG, в конце "== QTEST RESULT: PASS|FAIL ==". Строки "FAIL:"
-# - проваленные проверки. Код возврата 0 только при PASS.
-#
-# Таймаут: в QEMU всё в ~10 раз медленнее платы (i2c-транзакция ~2 с), полный
-# прогон ~3-5 минут. Запускать фоном, а не из-под короткого таймаута bash.
-set -uo pipefail
+# Загружает реальное ядро 6.6 (prebuilt/zImage) и РЕАЛЬНЫЙ systemd PID 1 с
+# временной разреженной копии SD-образа в /dev/shm или /tmp (сам финальный образ
+# $COPYTO/informer701-${BUILD}.img.xz остаётся неизменным и чистым).
+set -euo pipefail
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PATH
+
+as_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-BUILD="${BUILD:-b021}"
-ROOTFS="${ROOTFS:-/tmp/art-$BUILD/rootfs}"
-Q="/tmp/qroot-$BUILD"
-CPIO="/tmp/qtest-$BUILD.cpio.gz"
-LOG="${LOG:-/tmp/qtest-$BUILD.log}"
-TIMEOUT="${TIMEOUT:-900}"
-DTB="${DTB:-$HERE/prebuilt/lowopp.dtb}"
-KERNEL="${KERNEL:-$HERE/prebuilt/zImage}"
+BUILD="${BUILD:-debian}"
+COPYTO="${COPYTO:-/tmp/out-debian}"
+IMG_XZ="${IMG_XZ:-$COPYTO/informer701-${BUILD}.img.xz}"
+SAVE_LOG="${SAVE_LOG:-$COPYTO/qtest-pass.log}"
+ZIMAGE="${ZIMAGE:-$HERE/prebuilt/zImage}"
+# В QEMU cubieboard нет физического чипа AXP209 на TWI0 -> используем вариант noaxp.dtb,
+# идентичный по всем остальным узлам базовому DTB Informer 701.
+DTB="${DTB:-$HERE/prebuilt/noaxp.dtb}"
+TIMEOUT="${TIMEOUT:-300}"
+QEMU_MEM="${QEMU_MEM:-512M}"
 
-[ -d "$ROOTFS" ] || { echo "FATAL: нет rootfs $ROOTFS (сначала build-image.sh)" >&2; exit 2; }
-[ -f "$KERNEL" ] || { echo "FATAL: нет ядра $KERNEL" >&2; exit 2; }
-[ -f "$DTB" ]    || { echo "FATAL: нет DTB $DTB" >&2; exit 2; }
-command -v qemu-system-arm >/dev/null || { echo "FATAL: нет qemu-system-arm" >&2; exit 2; }
-command -v cpio >/dev/null || { echo "FATAL: нет cpio (apt-get install cpio)" >&2; exit 2; }
+command -v qemu-system-arm >/dev/null || {
+    echo "нужен пакет qemu-system-arm" >&2
+    exit 1
+}
 
-echo "== qemu-test $BUILD"
-echo "   rootfs : $ROOTFS"
-echo "   ядро   : $KERNEL"
-echo "   dtb    : $DTB"
-echo "   лог    : $LOG"
-
-rm -rf "$Q"; mkdir -p "$Q"
-cp -a "$ROOTFS/." "$Q/"
-cp "$HERE/scripts/qtest-init.sh" "$Q/init"
-chmod 755 "$Q/init"
-
-(cd "$Q" && find . | LC_ALL=C cpio -o -H newc 2>/dev/null | gzip -1 > "$CPIO")
-SZ=$(du -k "$CPIO" | cut -f1)
-echo "   initramfs: $CPIO (${SZ} КБ)"
-# без cpio в контейнере архив получается пустым (4 КБ) и тест "проходит" впустую
-if [ "$SZ" -lt 1000 ]; then
-    echo "FATAL: initramfs всего ${SZ} КБ - rootfs не упакован (нет cpio? пустой $Q?)" >&2
-    exit 2
+if [ ! -f "$IMG_XZ" ]; then
+    echo "=== [0] образ $IMG_XZ не найден - запускаю сборку build-image.sh ==="
+    BUILD="$BUILD" COPYTO="$COPYTO" "$HERE/scripts/build-image.sh"
 fi
 
-# QEMU сам не выходит после poweroff гостя (у cubieboard нет обработчика
-# выключения), поэтому ждём строку "== QTEST DONE ==" в логе и гасим процесс.
-: > "$LOG"
-qemu-system-arm \
-    -M cubieboard -m "${MEM:-512}" -smp 1 -nographic -no-reboot \
-    -kernel "$KERNEL" -dtb "$DTB" -initrd "$CPIO" \
-    -append "console=ttyS0,115200 loglevel=4 clk_ignore_unused rdinit=/init panic=1" \
-    > "$LOG" 2>&1 &
-QPID=$!
-RC=0
-WAITED=0
-while [ "$WAITED" -lt "$TIMEOUT" ]; do
-    sleep 5; WAITED=$((WAITED+5))
-    if tr -d '\r' < "$LOG" 2>/dev/null | grep -q 'QTEST DONE'; then break; fi
-    if ! kill -0 "$QPID" 2>/dev/null; then RC=1; break; fi
-done
-[ "$WAITED" -ge "$TIMEOUT" ] && echo "== ВНИМАНИЕ: таймаут $TIMEOUT с - тест не завершился"
-kill -TERM "$QPID" 2>/dev/null; sleep 2; kill -KILL "$QPID" 2>/dev/null
-wait "$QPID" 2>/dev/null
-echo "== прогон занял ~$WAITED с (qemu остановлен)"
-
-echo
-echo "-------------------- проваленные проверки --------------------"
-if tr -d '\r' < "$LOG" | grep -q '^FAIL:'; then
-    tr -d '\r' < "$LOG" | grep '^FAIL:' | head -40
+# Используем /dev/shm если в нём свободно >= 450 МиБ, иначе /tmp (переносимость с Docker/CI)
+SHM_FREE=$(df -Pm /dev/shm 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)
+if [ "${SHM_FREE:-0}" -ge 450 ]; then
+    QBASE=/dev/shm
 else
-    echo "  (нет строк FAIL:)"
+    QBASE="${TMPDIR:-/tmp}"
 fi
-echo "----------------------- итог ---------------------------------"
-tr -d '\r' < "$LOG" | grep -E 'QTEST RESULT|QTEST DONE|провалено проверок' || echo "  тест не дошёл до конца (см. $LOG)"
 
-if tr -d '\r' < "$LOG" | grep -q 'QTEST RESULT: PASS'; then
-    echo "== РЕЗУЛЬТАТ: PASS"
-    exit 0
+QWORK=$(mktemp -d "$QBASE/informer701-qtest.XXXXXX")
+LOG="$QWORK/qemu.log"
+QIMG="$QWORK/sd.img"
+MNT="$QWORK/mnt"
+
+cleanup() {
+    set +e
+    [ -n "${QPID:-}" ] && kill "$QPID" 2>/dev/null || true
+    if mountpoint -q "$MNT" 2>/dev/null; then
+        as_root umount -lf "$MNT" 2>/dev/null || true
+    fi
+    as_root rm -rf "$QWORK"
+}
+trap cleanup EXIT
+
+echo "=== [1/3] подготовка разреженной копии образа ($IMG_XZ -> $QIMG) ==="
+xz -dc "$IMG_XZ" | cp --sparse=always /dev/stdin "$QIMG"
+
+# Смещение второго раздела (rootfs ext4) = 65 МиБ = 68157440 байт
+ROOT_OFFSET=$((65 * 1024 * 1024))
+mkdir -p "$MNT"
+as_root mount -o loop,offset="$ROOT_OFFSET" "$QIMG" "$MNT"
+
+# Устанавливаем в тестовую копию одноразовый сервис самопроверки после multi-user.target
+as_root install -m 0755 "$HERE/scripts/qtest-init.sh" "$MNT/usr/local/sbin/qtest-runner"
+as_root tee "$MNT/etc/systemd/system/informer701-qtest.service" >/dev/null <<'EOF'
+[Unit]
+Description=Informer 701 Automated QEMU Self-Test
+After=multi-user.target informer701-zram.service dropbear.service haveged.service informer701-usbnet.service informer701-wifi.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/qtest-runner
+StandardOutput=null
+StandardError=null
+TimeoutStartSec=240s
+EOF
+as_root ln -sf /etc/systemd/system/informer701-qtest.service \
+    "$MNT/etc/systemd/system/multi-user.target.wants/informer701-qtest.service"
+# Отключаем интерактивный agetty на ttyS0 только на время автотеста, чтобы приглашение
+# входа не перемешивалось с выводом qtest-runner (конфиг serial-getty проверяется тестом).
+as_root rm -f "$MNT/etc/systemd/system/getty.target.wants/serial-getty@ttyS0.service"
+
+as_root umount "$MNT"
+
+echo "=== [2/3] запуск QEMU (cubieboard / Cortex-A8 / $QEMU_MEM / systemd PID 1, таймаут ${TIMEOUT}с) ==="
+qemu-system-arm \
+    -M cubieboard \
+    -cpu cortex-a8 \
+    -m "$QEMU_MEM" \
+    -display none \
+    -no-reboot \
+    -monitor none \
+    -serial file:"$LOG" \
+    -kernel "$ZIMAGE" \
+    -dtb "$DTB" \
+    -drive file="$QIMG",format=raw,if=sd \
+    -append "console=ttyS0,115200 root=/dev/mmcblk0p2 rootfstype=ext4 rootwait rw panic=5 net.ifnames=0 systemd.show_status=true" \
+    </dev/null >"$QWORK/qemu.err" 2>&1 &
+QPID=$!
+
+ELAPSED=0
+while kill -0 "$QPID" 2>/dev/null; do
+    if grep -q 'QTEST_RESULT:' "$LOG" 2>/dev/null; then
+        sleep 1
+        kill "$QPID" 2>/dev/null || true
+        break
+    fi
+    if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+        echo "ТАЙМАУТ (${TIMEOUT} с) - останавливаю QEMU" >&2
+        kill -9 "$QPID" 2>/dev/null || true
+        break
+    fi
+    sleep 1
+    ELAPSED=$((ELAPSED + 1))
+done
+wait "$QPID" 2>/dev/null || true
+
+echo "=== [3/3] вывод гостевой системы (${ELAPSED} с) ==="
+[ -s "$QWORK/qemu.err" ] && { echo "--- stderr QEMU ---"; cat "$QWORK/qemu.err"; }
+[ -f "$LOG" ] && cat "$LOG"
+echo ""
+
+if [ -n "${SAVE_LOG:-}" ] && [ -f "$LOG" ]; then
+    mkdir -p "$(dirname "$SAVE_LOG")"
+    cp "$LOG" "$SAVE_LOG"
+    if [ -n "${SUDO_UID:-}" ] && [ -n "${SUDO_GID:-}" ]; then
+        chown "${SUDO_UID}:${SUDO_GID}" "$SAVE_LOG" 2>/dev/null || true
+    fi
 fi
-echo "== РЕЗУЛЬТАТ: FAIL (полный лог: $LOG)"
-exit 1
+
+if grep -q 'QTEST_RESULT: PASS' "$LOG"; then
+    echo ">>> ИТОГ QEMU: УСПЕХ <<<"
+    exit 0
+else
+    echo ">>> ИТОГ QEMU: ПРОВАЛ <<<" >&2
+    exit 1
+fi
